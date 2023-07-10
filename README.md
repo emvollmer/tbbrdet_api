@@ -7,6 +7,7 @@ To launch it, first install the package then run [deepaas](https://github.com/in
 ```bash
 git clone https://github.com/emvollmer/tbbrdet_api
 cd tbbrdet_api
+source install_TBBRDet.sh 	# this sets up the venv with the required packages and installs the submodule TBBRDet as an editable project
 pip install -e .
 deepaas-run --listen-ip 0.0.0.0
 ```
