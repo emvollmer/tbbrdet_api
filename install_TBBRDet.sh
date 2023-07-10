@@ -9,7 +9,7 @@ else
    venv_pth="$venv_dir"/bin/activate
    if test -f "$venv_pth"; then
       echo "'$venv_pth' exists and is a venv. Activating..."
-      source $venv_pth
+      source "$venv_pth"
    else
       echo "'$venv_pth' does not exist. Please create a venv to use and activate it or do so by rerunning this script."; sleep 5
       exit
@@ -44,7 +44,7 @@ pip3 install torch==1.8.0+cu111 torchvision==0.9.0+cu111 torchaudio==0.8.0 -f ht
 # Install openmim using pip
 pip3 install -U openmim
 # Use mim to install mmcv
-mim3 install mmcv-full==1.5
+mim install mmcv-full==1.5
 # Install correct mmdetection version
 pip3 install mmdet==2.21.0
 
