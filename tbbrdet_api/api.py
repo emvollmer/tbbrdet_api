@@ -24,21 +24,24 @@ module [2].
 """
 import logging
 import os
+import os.path as osp
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from tqdm import tqdm
 import pkg_resources
 
 from tbbrdet_api import configs, fields, misc
-from tbbrdet_api.scripts import infer
 from tbbrdet_api.scripts.train import main
-from tbbrdet_api.misc import _catch_error
+from tbbrdet_api.scripts.infer import infer
+from tbbrdet_api.misc import (
+    _catch_error, extract_zst,
+    download_with_rclone, download_folder_from_nextcloud,
+    check_train_from, get_pth_to_resume_from
+)
 
 logger = logging.getLogger('__name__')
-
-
-BASE_DIR = Path(__file__).resolve().parents[1]
 
 
 @_catch_error
@@ -57,34 +60,11 @@ def get_metadata():
         'description': configs.MODEL_METADATA.get("summary"),
         'license': configs.MODEL_METADATA.get("license"),
         'version': configs.MODEL_METADATA.get("version"),
-        'checkpoints_local': misc.ls_local(),
-        'checkpoints_remote': misc.ls_remote(),
-        }
+        'checkpoint_files_local': misc.ls_local(),
+        'checkpoint_files_remote': misc.ls_remote(),
+    }
     logger.debug("Package model metadata: %d", metadata)
     return metadata
-    # distros = list(pkg_resources.find_distributions(str(BASE_DIR), only=True))
-    # if len(distros) == 0:
-    #     raise Exception("No package found.")
-    # pkg = distros[0]  # if several select first
-    #
-    # meta_fields = {
-    #     "name": None,
-    #     "version": None,
-    #     "summary": None,
-    #     "home-page": None,
-    #     "author": None,
-    #     "author-email": None,
-    #     "license": None,
-    # }
-    # meta = {}
-    # for line in pkg.get_metadata_lines("PKG-INFO"):
-    #     line_low = line.lower()  # to avoid inconsistency due to letter cases
-    #     for k in meta_fields:
-    #         if line_low.startswith(k + ":"):
-    #             _, value = line.split(": ", 1)
-    #             meta[k] = value
-
-    # return meta
 
 
 def get_train_args():
@@ -94,6 +74,7 @@ def get_train_args():
     Returns:
         Dictionary of webargs fields.
       """
+    # NOTE: potentially requires _fields_to_dict misc function for conversion!
     train_args = fields.TrainArgsSchema().fields
     logger.debug("Web arguments: %d", train_args)
     return train_args
@@ -101,7 +82,7 @@ def get_train_args():
 
 def get_predict_args():
     """
-    Return the arguments that are needed to perform a  prediciton.
+    Return the arguments that are needed to perform a prediction.
 
     Args:
         None
@@ -109,6 +90,7 @@ def get_predict_args():
     Returns:
         Dictionary of webargs fields.
     """
+    # NOTE: potentially requires _fields_to_dict misc function for conversion!
     predict_args = fields.PredictArgsSchema().fields
     logger.debug("Web arguments: %d", predict_args)
     return predict_args
@@ -122,16 +104,55 @@ def train(**args):
     Returns:
         path to the trained model
     """
-    assert not (args.get('resume_training', False) and not args.get('weights')), \
-        "weights argument should not be empty when resume_training is True"
+    # if no data in local data folder, download it from Nextcloud
+    if not os.listdir(configs.DATA_PATH):
+        logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
+                    f"downloading data from '{configs.REMOTE_DATA_DIR}'...")
+        download_with_rclone(remote_folder=configs.REMOTE_DATA_DIR,
+                             local_folder=configs.DATA_PATH)
+
+        logger.info("Extracting data from any .tar.zst format files...")
+        zst_paths = Path(configs.DATA_PATH).glob("**/*.tar.zst")
+        for z in tqdm(zst_paths):
+            extract_zst(z, Path(osp.dirname(z), "images", z.stem.split(".")[0]))
+
+    # define specifics of training (from scratch, pretrained, resume)
+    if args['ckp_resume_dir']:
+        # define whether we're training from scratch or coco
+        args['train_from'] = check_train_from(args['ckp_resume_dir'])
+
+        # download model if necessary
+        if "rshare" in args['ckp_resume_dir']:
+            args['ckp_resume_dir'] = download_folder_from_nextcloud(
+                remote_dir=args['ckp_resume_dir'],
+                filetype="model", check="latest"
+            )
+
+    elif args['ckp_pretrain_pth']:
+        # define that we're training from coco
+        args['train_from'] = configs.settings['train_from']['coco']
+
+        # download model if necessary
+        if "rshare" in args['ckp_pretrain_pth']:
+            local_pretrain_ckp_folder = download_folder_from_nextcloud(
+                remote_dir=osp.dirname(args['ckp_pretrain_pth']),
+                filetype="pretrained weights"
+            )
+            args['ckp_pretrain_pth'] = osp.join(local_pretrain_ckp_folder,
+                                                osp.basename(args['ckp_pretrain_pth']))
+
+    else:  # neither resuming nor using pretrained weights means we're training from scratch
+        args['train_from'] = configs.settings['train_from']['scratch']
+
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-    ckpt_path = os.path.join(configs.MODEL_DIR, timestamp)
-    if not os.path.exists(ckpt_path):
-        os.mkdir(ckpt_path)
-    args['name'] = ckpt_path
-    args['data_config'] = os.path.join(configs.DATA_PATH, args['data_config'])
+    model_dir = osp.join(configs.MODEL_DIR, args['train_from'], timestamp)
+    if not osp.exists(model_dir):
+        os.mkdir(model_dir)
+    args['model_work_dir'] = model_dir
+
     main(args)
-    return {f'model was saved in {args["name"]}'}
+
+    return {f'Model and logs were saved to {args["name"]}'}
 
 
 def predict(**args):
@@ -142,14 +163,19 @@ def predict(**args):
     Returns:
         either a json file or png image with bounding box
     """
-    misc.download_model_from_nextcloud(args['timestamp'])
-
-    args['weights'] = os.path.join(configs.MODEL_DIR, args['timestamp'], 'best_model.pth')
+    # if the selected model is from the remote repository, download it
+    if "rshare" in args['predict_model_dir']:
+        args['predict_model_dir'] = download_folder_from_nextcloud(
+            remote_dir=args['predict_model_dir'], filetype="model", check="best"
+        )
+    args['model_pth'] = get_pth_to_resume_from(directory=args['predict_model_dir'],
+                                               priority=['best', 'latest', 'epoch'])
+    assert args['model_pth'], f"No '.pth' files in {args['predict_model_dir']} to predict with!"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         for f in [args['input']]:
             shutil.copy(f.filename, tmpdir + F'/{f.original_filename}')
-        args['input'] = [os.path.join(tmpdir, t) for t in os.listdir(tmpdir)]
+        args['input'] = [osp.join(tmpdir, t) for t in os.listdir(tmpdir)]
         outputs, buffer = infer.main(args)
 
         if args['accept'] == 'image/png':
@@ -159,23 +185,21 @@ def predict(**args):
 
 
 if __name__ == '__main__':
-    args = {'model': 'fasterrcnn_convnext_small',
-            'data_config': 'test_data/submarin.yaml',
-            'use_train_aug': False,
-            'device': True,
-            'epochs': 1,
-            'workers': 4,
-            'batch': 1,
-            'lr': 0.001,
-            'imgsz': 640,
-            'no_mosaic': True,
-            'cosine_annealing': False,
-            'weights': '/home/se1131/fasterrcnn_pytorch_api/models/2023-05-10_121810/last_model.pth',
-            'resume_training': True,
-            'square_training': False,
-            'seed': 0
-            }
-    train(**args)
+    ex_args = {
+        'model': 'mask_rcnn_swin-t',
+        'ckp_pretrain_pth': None,
+        'ckp_resume_dir': None,
+        # 'data_config': 'test_data/submarin.yaml',
+        # 'use_train_aug': False,
+        'device': True,
+        'epochs': 1,
+        'workers': 2,
+        'batch': 1,
+        'lr': 0.0001,
+        # 'imgsz': 640,
+        'seed': 42
+    }
+    train(**ex_args)
 
 # def warm():
 #     pass

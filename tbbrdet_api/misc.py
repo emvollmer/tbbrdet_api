@@ -8,14 +8,21 @@ from functools import wraps
 from multiprocessing import Process
 import logging
 import os
+import os.path as osp
 import subprocess
 import warnings
+from pathlib import Path
+import re
+import tempfile
+import tarfile
+import zstandard
 
 from aiohttp.web import HTTPBadRequest
 
 from tbbrdet_api import configs
 
 logger = logging.getLogger('__name__')
+logger.setLevel(logging.DEBUG)
 
 
 def _catch_error(f):
@@ -55,26 +62,47 @@ def _fields_to_dict(fields_in):
     return dict_out
 
 
-def mount_nextcloud(frompath, topath):
-    """
-    Mount a NextCloud folder in your local machine or viceversa.
+def set_log(log_dir):
+    logging.basicConfig(
+        # level=logging.DEBUG,
+        format='%(message)s',
+        # dateformat='%a, %d %b %Y %H:%M:%S',
+        filename=f"{log_dir}/train.log",
+        filemode='w'
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    # add the handler to the root logger
+    logging.getLogger().addHandler(console)
 
-    Example of usage:
-        mount_nextcloud('rshare:/data/images', 'my_local_image_path')
 
-    Parameters
-    ==========
-    * frompath: str, pathlib.Path
-        Source folder to be copied
-    * topath: str, pathlib.Path
-        Destination folder
+def extract_zst(archive, out_path):
+    """extract .zst file
+    works on Windows, Linux, MacOS, etc.
+
+    Function source:
+    https://gist.github.com/scivision/ad241e9cf0474e267240e196d7545eca
+
+    Args:
+        archive: pathlib.Path or str .zst file to extract
+        out_path: pathlib.Path or str directory to extract files and directories to
     """
-    command = ["rclone", "copy", f"{frompath}", f"{topath}"]
-    result = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, error = result.communicate()
-    if error:
-        warnings.warn(f"Error while mounting NextCloud: {error}")
-    return output, error
+
+    if zstandard is None:
+        raise ImportError("pip install zstandard")
+
+    archive = Path(archive).expanduser()
+    out_path = Path(out_path).expanduser().resolve()
+    # need .resolve() in case intermediate relative dir doesn't exist
+
+    dctx = zstandard.ZstdDecompressor()
+
+    with tempfile.TemporaryFile(suffix=".tar") as ofh:
+        with archive.open("rb") as ifh:
+            dctx.copy_stream(ifh, ofh)
+        ofh.seek(0)
+        with tarfile.open(fileobj=ofh) as z:
+            z.extractall(out_path)
 
 
 def launch_cmd(logdir, port):
@@ -104,108 +132,193 @@ def launch_tensorboard(logdir, port=6006):
 
 def ls_local():
     """
-    Utility to return a list of current models stored in the local folders
+    Utility to return a list of current models / ckp_pretrain_pth .pth files stored in the local folders
     configured for cache.
 
     Returns:
-        A list of strings.
+        list: list of relevant .pth file paths
     """
     logger.debug("Scanning at: %s", configs.MODEL_DIR)
-    dirscan = os.scandir(configs.MODEL_DIR)
-    return [entry.name for entry in dirscan if entry.is_dir()]
+    local_paths = Path(configs.MODEL_DIR).glob("**/*.pth")
+    # to include only the last 4 path elements, change to "str(Path(*entry.parts[-4:]))"
+    return [entry for entry in local_paths
+            if any(w in str(entry) for w in ["best", "weight"])]
 
 
 def ls_remote():
     """
-    Utility to return a list of current backbone models stored in the
-    remote folder configured in the backbone url.
+    Utility to return a list of current models stored in the
+    remote folder.
 
     Returns:
         A list of strings.
     """
-    remote_directory = configs.REMOT_PATH
-    return list_directories_with_rclone('rshare', remote_directory)
+    remote_directory = configs.REMOTE_MODEL_DIR
+    return list_pth_files_with_rclone('rshare', remote_directory)
 
 
-def list_directories_with_rclone(remote_name, directory_path):
+def list_pth_files_with_rclone(remote_name, directory_path):
     """
-    Function to list directories within a given directory in Nextcloud using rclone.
+    Function to list all .pth files (models_ckps / pretrain_ckps) within
+    a given directory in Nextcloud using rclone.
 
     Args:
         remote_name (str): Name of the configured Nextcloud remote in rclone.
-        directory_path (str): Path of the parent directory to list the directories from.
+        directory_path (str): Path of the parent directory to list the model paths from.
 
     Returns:
-        list: List of directory names within the specified parent directory.
+        list: List of .pth files for models or ckp_pretrain_pth within the specified parent directory.
     """
-
-    command = ['rclone', 'lsf', remote_name + ':' + directory_path]
+    # get recursive list of all files and folders in the remote directory path
+    command = ['rclone', 'lsf', remote_name + ':' + directory_path, "-R", "--absolute"]
     result = subprocess.run(command, capture_output=True, text=True)
 
     if result.returncode == 0:
-        directory_names = result.stdout.splitlines()
-        directory_names = [d.rstrip("/") for d in directory_names if d[0].isdigit()]
-        return directory_names
+        directories = result.stdout.splitlines()
+        model_paths = [d.rstrip("/") for d in directories
+                       if any(w in d for w in ["best", "weight"])
+                       if d.endswith(".pth")]
+        return model_paths
     else:
-        print("Error executing rclone command:", result.stderr)
+        logger.warning("Error executing rclone command:", result.stderr)
         return []
 
 
-def download_model_from_nextcloud(timestamp):
+def get_model_dirs(paths):
     """
-    Downloads the final model from nextcloud to a specified checkpoint path.
-
+    Function to reduce list of paths to only those of model checkpoints
     Args:
-        timestamp (str): The timestamp of the model on Nextcloud.
+        paths (list): list of all paths
 
     Returns:
-       None
+        list: only folders that contain model checkpoint paths ("best...pth"/"latest.pth")
+    """
+    return list(set([osp.dirname(d.rstrip("/")) for d in paths if "weight" not in d]))
+
+
+def get_pretrain_ckpt_paths(paths):
+    """
+    Function to reduce list of paths to only those of weight checkpoints
+    Args:
+        paths (list): list of all paths
+
+    Returns:
+        list: only ckp_pretrain_pth checkpoint paths
+    """
+    return [d.rstrip("/") for d in paths if "weight" in d]
+
+
+def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
+    """
+    Downloads the remote folder from nextcloud to a specified checkpoint path.
+
+    Args:
+        remote_dir (str): The path to the model / weights folder in NextCloud
+        filetype (str): What is being copied (model, weights, data?)
+        check (str): String with which to check if correct files were downloaded
+
+    Returns:
+       local_model_dir (str): The path to the local folder to which the model was copied
 
     Raises:
-       Exception: If no files were copied to the checkpoint directory after downloading the model from the URL.
+       Exception: If no files were copied to the checkpoint directory
+                  after downloading the model from the URL.
 
     """
-    logger.debug("Scanning at: %s", timestamp)
-    logger.debug("Scanning at: %s", configs.REMOT_PATH)
-    local_path = configs.MODEL_DIR
-    ckpt_path = os.path.join(local_path, timestamp)
+    logger.debug("Scanning at: %s", remote_dir)
 
-    if timestamp not in os.listdir(local_path):
-        print('downloading the chekpoint from nextcloud')
-        remote_directory = configs.REMOT_PATH
-        model_path = os.path.join(remote_directory, timestamp)
-        download_directory_with_rclone('rshare', model_path, local_path)
+    # get local folder, which will include the "<model-name>_coco-pretrain" / _scratch folder
+    local_base_dir = os.path.join(configs.MODEL_DIR, check_train_from(remote_dir))
+    folder_to_copy = osp.basename(remote_dir)
+    local_dir = osp.join(local_base_dir, folder_to_copy)
 
-        if 'best_model.pth' not in os.listdir(ckpt_path):
-            raise Exception(f"No files were copied to {ckpt_path}")
+    if folder_to_copy not in os.listdir(local_base_dir):
+        logger.info(f'Downloading the {filetype} checkpoints from Nextcloud')
 
-        print(f"The model for {timestamp} was copied to {ckpt_path}")
+        download_with_rclone(
+            remote_folder=remote_dir.replace("/rshare/", ""),
+            local_folder=local_dir
+        )
+        # todo: ensure this works as planned, because in EGI tut
+        #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_DIR (no
+        #  predict_model_dir) and rclone doesn't copy the src folder!
+        #  https://rclone.org/commands/rclone_copy/
+
+        if any(check in d for d in os.listdir(local_dir)):
+            raise Exception(f"Folder with {filetype} wasn't copied to '{local_dir}', due to "
+                            f" missing {filetype} path files in '{remote_dir}'!")
+
+        logger.info(f"The remote {filetype} folder '{remote_dir}' was copied to '{local_dir}'")
 
     else:
-        print(f"Skipping download for {timestamp} as the model already exists in {ckpt_path}")
+        logger.info(f"Skipping download of '{remote_dir}' as the "
+                    f"folder with {filetype} already exists in '{local_dir}'!")
+
+    return local_dir
 
 
-def download_directory_with_rclone(remote_name, remote_directory, local_directory):
+def download_with_rclone(remote_folder, local_folder):
     """
     Function to download a directory using rclone.
 
     Args:
-        remote_name (str): Name of the configured remote in rclone.
-        remote_directory (str): Path of the remote directory to be downloaded.
-        local_directory (str): Path of the local directory to save the downloaded files.
+        remote_folder (str): Path of the remote directory to be downloaded.
+        local_folder (str): Path of the local directory to save the downloaded files.
 
     Returns:
         None
     """
 
-    command = ['rclone', 'copy', remote_name + ':' + remote_directory, local_directory]
+    command = ['rclone', 'copy', 'rshare:' + remote_folder, local_folder]
     result = subprocess.run(command, capture_output=True, text=True)
 
     if result.returncode == 0:
-        print("Directory downloaded successfully.")
+        logger.info("Directory downloaded successfully.")
     else:
-        print("Error executing rclone command:", result.stderr)
+        logger.warning("Error executing rclone command:", result.stderr)
+
+
+def check_train_from(directory):
+    """
+    Check if directory contains information on training from scratch or with coco ckp_pretrain_pth
+    Args:
+        directory (str): The path to be checked
+
+    Returns:
+        val (str): Either "mask_rcnn_swin-t_coco-pretrained" or "mask_rcnn_swin-t_scratch"
+
+    """
+    for val in configs.settings['train_from'].values():
+        if val in directory:
+            return val
+
+
+def get_pth_to_resume_from(directory, priority):
+    """
+    Define .pth file name from which to resume from.
+    Resuming is prioritized according to the "priority" list
+
+    Args:
+        directory (str): Directory to search through for .pth file names to be chosen from
+        priority (list): Strings to be matched in priority order, f.e. ['latest', 'best', 'epoch']
+
+    Returns:
+        pth_name (str/None): Selected path file name to resume from
+    """
+    pth_names = [i for i in os.listdir(directory) if i.endswith(".pth")]
+    # sort list of path names so that "epoch_X.pth" are in descending numerical order
+    sorted_pth_names = sorted(pth_names,
+                              key=lambda f: int(re.search(r'\d+', f).group())
+                              if re.search(r'\d+', f) else float('inf'), reverse=True)
+
+    # we prioritize resuming according to the provided priority and in descending order
+    for option in priority:
+        for pth in sorted_pth_names:
+            if option in pth:
+                return pth
+    # return none if none of the "priority" list strings were found at all
+    return None
 
 
 if __name__ == '__main__':
-    print("Remote directory path:", configs.REMOT_PATH)
+    print("Remote directory path:", configs.REMOTE_MODEL_DIR)
