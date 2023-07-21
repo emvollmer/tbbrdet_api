@@ -62,11 +62,11 @@ def main(args):
 
     # define config to be used by train_from statement
     if "scratch" in args['train_from']:
-        args['conf'] = osp.join(configs.TOP_LEVEL_DIR, "/TBBRDet/configs/mmdet/swin/"
+        args['conf'] = osp.join(configs.TOP_LEVEL_DIR, "TBBRDet/configs/mmdet/swin/"
                                                        "mask_rcnn_swin-t-p4-w7_fpn_fp16_ms"
                                                        "-crop-3x_coco.scratch.py")
     else:
-        args['conf'] = osp.join(configs.TOP_LEVEL_DIR, "/TBBRDet/configs/mmdet/swin/"
+        args['conf'] = osp.join(configs.TOP_LEVEL_DIR, "TBBRDet/configs/mmdet/swin/"
                                                        "mask_rcnn_swin-t-p4-w7_fpn_fp16_ms"
                                                        "-crop-3x_coco.pretrained.py")
 
@@ -100,6 +100,9 @@ def main(args):
     # Set logging file.
     set_log(OUT_DIR)
     yaml_save(file_path=os.path.join(OUT_DIR, 'options.yaml'), data=args)
+    print(f"Training starting with the settings:")
+    for k, v in args.items():
+        print(f"\t'{k}': {v}")
 
     # call on TBBRDet training scripts
     # note: this may have to be done via subprocess, probably won't work by external function call

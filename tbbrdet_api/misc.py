@@ -13,9 +13,6 @@ import subprocess
 import warnings
 from pathlib import Path
 import re
-import tempfile
-import tarfile
-import zstandard
 
 from aiohttp.web import HTTPBadRequest
 
@@ -76,33 +73,53 @@ def set_log(log_dir):
     logging.getLogger().addHandler(console)
 
 
-def extract_zst(archive, out_path):
-    """extract .zst file
-    works on Windows, Linux, MacOS, etc.
-
-    Function source:
-    https://gist.github.com/scivision/ad241e9cf0474e267240e196d7545eca
+def extract_zst(file_path, limit_gb):
+    """
+    Extracting the files from the tar.zst files
 
     Args:
-        archive: pathlib.Path or str .zst file to extract
-        out_path: pathlib.Path or str directory to extract files and directories to
+        file_path: pathlib.Path or str .zst file to extract
+        limit_gb: disk space limit (in GB) that shouldn't be exceeded during unpacking
+
+    Returns:
+        limit_exceeded (Bool): Turns true if no more data is allowed to be extracted
+
     """
+    limit_exceeded = False
+    # convert limit_gb to bytes
+    limit_bytes = limit_gb * 1024 * 1024 * 1024
 
-    if zstandard is None:
-        raise ImportError("pip install zstandard")
+    # get the current amount of bytes stored in the data directory
+    stored_bytes = sum(f.stat().st_size for f in Path(configs.DATA_PATH).glob('**/*')
+                       if f.is_file())
 
-    archive = Path(archive).expanduser()
-    out_path = Path(out_path).expanduser().resolve()
-    # need .resolve() in case intermediate relative dir doesn't exist
+    print(f"Data folder currently contains {stored_bytes / (1024 * 3)} GB.\n"
+          f"Now unpacking {file_path}...")
+    tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
+                   str(file_path), "-C", osp.dirname(str(file_path))]
+    # Capture the standard output and standard error
+    process = subprocess.Popen(tar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    dctx = zstandard.ZstdDecompressor()
+    while True:
+        line = process.stdout.readline()
+        if not line:
+            break
 
-    with tempfile.TemporaryFile(suffix=".tar") as ofh:
-        with archive.open("rb") as ifh:
-            dctx.copy_stream(ifh, ofh)
-        ofh.seek(0)
-        with tarfile.open(fileobj=ofh) as z:
-            z.extractall(out_path)
+        # Update the extracted size with the size of the current file
+        stored_bytes += len(line)
+
+        # Check if the extracted size exceeds the limit
+        if stored_bytes >= limit_bytes:
+            print(f"Exceeded maximum allowed size of {limit_gb} GB for Data folder.")
+            limit_exceeded = True
+            process.terminate()
+            break
+
+    process.wait()
+
+    # Check if the process was successful
+    assert process.returncode == 0, f"Error during unpacking of file {file_path}!"
+    return limit_exceeded
 
 
 def launch_cmd(logdir, port):
@@ -123,10 +140,11 @@ def launch_tensorboard(logdir, port=6006):
     * port: int
         Port to use for the monitoring webserver.
     """
-    subprocess.run(
+    subprocess.call(
         ["fuser", "-k", f"{port}/tcp"]  # kill any previous process in that port
     )
-    p = Process(target=launch_cmd, args=(logdir, port), daemon=True)
+    p = Process(target=launch_cmd, args=(logdir, port))
+    p.daemon = True  # Set the daemon property (Python 3.6 equivalent)
     p.start()
 
 
@@ -171,16 +189,17 @@ def list_pth_files_with_rclone(remote_name, directory_path):
     """
     # get recursive list of all files and folders in the remote directory path
     command = ['rclone', 'lsf', remote_name + ':' + directory_path, "-R", "--absolute"]
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = result.communicate()
 
     if result.returncode == 0:
-        directories = result.stdout.splitlines()
-        model_paths = [d.rstrip("/") for d in directories
+        directories = stdout.decode().splitlines()
+        model_paths = ["rshare" + d.rstrip("/") for d in directories
                        if any(w in d for w in ["best", "weight"])
                        if d.endswith(".pth")]
         return model_paths
     else:
-        logger.warning("Error executing rclone command:", result.stderr)
+        logger.warning("Error executing rclone command:", stderr.decode())
         return []
 
 
@@ -225,7 +244,7 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
                   after downloading the model from the URL.
 
     """
-    logger.debug("Scanning at: %s", remote_dir)
+    logger.debug(f"Scanning at: {remote_dir}")
 
     # get local folder, which will include the "<model-name>_coco-pretrain" / _scratch folder
     local_base_dir = os.path.join(configs.MODEL_DIR, check_train_from(remote_dir))
@@ -236,7 +255,7 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
         logger.info(f'Downloading the {filetype} checkpoints from Nextcloud')
 
         download_with_rclone(
-            remote_folder=remote_dir.replace("/rshare/", ""),
+            remote_folder=remote_dir.replace("rshare/", ""),
             local_folder=local_dir
         )
         # todo: ensure this works as planned, because in EGI tut

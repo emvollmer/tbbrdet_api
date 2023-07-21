@@ -13,7 +13,7 @@ import configparser
 import os
 from pathlib import Path
 import pathlib
-from importlib.metadata import metadata as _metadata
+from importlib_metadata import metadata as _metadata
 # --------------------------------------
 
 # Get absolute paths for reference

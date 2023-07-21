@@ -63,7 +63,7 @@ def get_metadata():
         'checkpoint_files_local': misc.ls_local(),
         'checkpoint_files_remote': misc.ls_remote(),
     }
-    logger.debug("Package model metadata: %d", metadata)
+    logger.debug("Package model metadata: %s", metadata)
     return metadata
 
 
@@ -76,7 +76,7 @@ def get_train_args():
       """
     # NOTE: potentially requires _fields_to_dict misc function for conversion!
     train_args = fields.TrainArgsSchema().fields
-    logger.debug("Web arguments: %d", train_args)
+    logger.debug("Web arguments: %s", train_args)
     return train_args
 
 
@@ -92,7 +92,7 @@ def get_predict_args():
     """
     # NOTE: potentially requires _fields_to_dict misc function for conversion!
     predict_args = fields.PredictArgsSchema().fields
-    logger.debug("Web arguments: %d", predict_args)
+    logger.debug("Web arguments: %s", predict_args)
     return predict_args
 
 
@@ -105,16 +105,17 @@ def train(**args):
         path to the trained model
     """
     # if no data in local data folder, download it from Nextcloud
-    if not os.listdir(configs.DATA_PATH):
+    if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
                     f"downloading data from '{configs.REMOTE_DATA_DIR}'...")
         download_with_rclone(remote_folder=configs.REMOTE_DATA_DIR,
                              local_folder=configs.DATA_PATH)
 
         logger.info("Extracting data from any .tar.zst format files...")
-        zst_paths = Path(configs.DATA_PATH).glob("**/*.tar.zst")
-        for z in tqdm(zst_paths):
-            extract_zst(z, Path(osp.dirname(z), "images", z.stem.split(".")[0]))
+        for zst_pth in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
+            limit_exceeded = extract_zst(file_path=zst_pth, limit_gb=5)
+            if limit_exceeded:
+                break
 
     # define specifics of training (from scratch, pretrained, resume)
     if args['ckp_resume_dir']:
