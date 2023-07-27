@@ -79,9 +79,12 @@ if ! command -v "python --version" &> /dev/null ; then
     update-alternatives --install /usr/bin/python python /usr/bin/python3.6 1
     update-alternatives --set python /usr/bin/python3.6
 fi
-# update python3 (making sure not to break apt)
-unlink /usr/bin/python3
-ln -s /usr/bin/python3.6 /usr/bin/python
+# no /usr/bin/python3.6-config installed alongside this (don't remember how to do that...)
+
+# ## update python3 (making sure not to break apt) ### probably not necessary, we have python
+# unlink /usr/bin/python3
+# ln -s /usr/bin/python3.6 /usr/bin/python
 # do that with the config as well, but need the specific file name for that...
 
-# do the rest (other apt-get things that need installing, can't remember which...)
+# get code repository
+git clone --recurse-submodules https://github.com/emvollmer/TBBRDet.git
