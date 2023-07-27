@@ -26,8 +26,24 @@ current_cuda=$(nvcc --version | grep 'release' | awk '{print $5}' | cut -d ',' -
 required_cuda="11.6"
 check_correct_version "CUDA" $required_cuda "$current_cuda"
 
+
 # Make sure all applications are there for next steps
-apt-get install python3.6-dev python3.6-virtualenv
+echo "Installing necessary applications for virtual environment setup"
+yes | apt-get install python3.6-dev
+
+if message=$(yes | apt-get install python3.6-virtualenv 2>&1); then
+   echo "Python3.6-virtualenv successfully installed."
+else
+   echo "Python3.6-virtualenv installation unsuccessful:'$message'"
+   yes | apt install python3.6-venv
+fi
+
+
+# Switch to api directory if not already there
+if ! [[ "$PWD" == *\tbbrdet_api ]] && [ -d "tbbrdet_api" ] ; then
+   echo "Not yet in tbbrdet_api. Changing into directory to continue working..."
+   cd tbbrdet_api
+fi
 
 # Check for activated venv, create one if there is none, otherwise activate it
 if [[ "$VIRTUAL_ENV" != "" ]]; then
@@ -39,8 +55,12 @@ else
    if test -f $venv_act; then
       echo "Virtual environment at '$venv_name' already exists. Activating..."
    else
-      python3.6 -m venv "$venv_name"
-      echo "Virtual environment successfully created. Activating..."
+      if message=$(python3.6 -m venv "$venv_name" 2>&1); then
+          echo "Virtual environment successfully created. Activating..."
+      else
+	  echo "Python3.6 venv created unsuccessful. Stopping..."; sleep 10
+	  exit 1
+      fi
    fi
    source $venv_act
 fi
@@ -82,3 +102,8 @@ echo "Packages installed."
 
 echo "Installing TBBRDet repository as editable..."
 pip3 install -e ./TBBRDet
+
+echo "Installing tbbrdet_api repository as editable..."
+pip3 install -e .
+
+echo "Installation process complete."
