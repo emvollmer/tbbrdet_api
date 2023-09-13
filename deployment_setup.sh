@@ -88,9 +88,8 @@ fi
 
 # get code repository
 git clone --recurse-submodules https://github.com/emvollmer/tbbrdet_api.git
-# alternatively with ssh key
-# git clone --recurse-submodules git@github.com/emvollmer/tbbrdet_api.git
 
+cd tbbrdet_api
 git pull --recurse-submodules
 printf "\tbranch = main" | tee -a .gitmodules
 git submodule update --remote --recursive
