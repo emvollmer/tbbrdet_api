@@ -4,18 +4,29 @@
 if rclone listremotes | grep -q "rshare:" ; then
     echo "Rshare identified as remote. Obscuring password..."
 
-    if rclone about rshare: | grep -q "Used:" ; then
+    if rclone about rshare: 2>&1 | grep -q "Used:" ; then
         echo "Successful connection to remote rshare."
     else
+        echo "Password needs to be obscured to set up rshare..."
         echo export RCLONE_CONFIG_RSHARE_PASS=$(rclone obscure $RCLONE_CONFIG_RSHARE_PASS) >> /root/.bashrc
         source /root/.bashrc
-        echo "Error in connecting to remote rshare."; sleep 10
-        exit 1
+        if ! rclone about rshare: 2>&1 | grep -q "Used:" ; then
+            echo "Error in connecting to remote rshare."; sleep 5
+            if [ "$0" != "$BASH_SOURCE" ]; then
+                return 1
+            else
+                exit 1
+            fi
+        fi
+        echo "Connected to remote rshare."
     fi
 else
     echo "Rshare not identified as (only) remote. Try to solve manually with AI4EOSC documentation."
-    sleep 10
-    exit 1
+    if [ "$0" != "$BASH_SOURCE" ]; then
+        return 1
+    else
+        exit 1
+    fi
 fi
 
 # Function to install CUDA and CUDNN
@@ -79,17 +90,14 @@ if ! command -v "python --version" &> /dev/null ; then
     update-alternatives --install /usr/bin/python python /usr/bin/python3.6 1
     update-alternatives --set python /usr/bin/python3.6
 fi
-# no /usr/bin/python3.6-config installed alongside this (don't remember how to do that...)
-
-# ## update python3 (making sure not to break apt) ### probably not necessary, we have python
-# unlink /usr/bin/python3
-# ln -s /usr/bin/python3.6 /usr/bin/python
-# do that with the config as well, but need the specific file name for that...
 
 # get code repository
 git clone --recurse-submodules https://github.com/emvollmer/tbbrdet_api.git
 
 cd tbbrdet_api
 git pull --recurse-submodules
-printf "\tbranch = main" | tee -a .gitmodules
 git submodule update --remote --recursive
+
+echo "==================================="
+echo "Initial deployment setup complete."
+echo "==================================="

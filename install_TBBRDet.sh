@@ -106,4 +106,6 @@ pip3 install -e ./TBBRDet
 echo "Installing tbbrdet_api repository as editable..."
 pip3 install -e .
 
+echo "==============================="
 echo "Installation process complete."
+echo "==============================="
