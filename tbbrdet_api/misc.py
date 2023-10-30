@@ -10,6 +10,9 @@ import logging
 import os
 import os.path as osp
 import subprocess
+from subprocess import TimeoutExpired
+import time
+import threading
 import warnings
 from pathlib import Path
 import re
@@ -20,6 +23,11 @@ from tbbrdet_api import configs
 
 logger = logging.getLogger('__name__')
 logger.setLevel(logging.DEBUG)
+
+
+class DiskSpaceExceeded(Exception):
+    """Raised when disk space is exceeded."""
+    pass
 
 
 def _catch_error(f):
@@ -84,17 +92,18 @@ def extract_zst(file_path, limit_gb):
     Returns:
         limit_exceeded (Bool): Turns true if no more data is allowed to be extracted
 
-    """
-    limit_exceeded = False
-    # convert limit_gb to bytes
-    limit_bytes = limit_gb * 1024 * 1024 * 1024
+    """  
+    log_disk_usage("Beginning unzipping")
+    
+    # get limit by comparing to remaining available space on node
+    limit_gb = check_node_disk_limit(configs.DATA_LIMIT_GB)
+    limit_bytes = limit_gb * (1024 ** 3)    # convert to bytes
 
     # get the current amount of bytes stored in the data directory
-    stored_bytes = sum(f.stat().st_size for f in Path(configs.DATA_PATH).glob('**/*')
-                       if f.is_file())
+    stored_bytes = get_disk_usage(configs.DATA_PATH)
 
-    print(f"Data folder currently contains {stored_bytes / (1024 * 3)} GB.\n"
-          f"Now unpacking {file_path}...")
+    print(f"Data folder currently contains {round(stored_bytes / (1024 ** 3), 2)} GB.\n"
+          f"Now unpacking '{file_path}'...")
     tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
                    str(file_path), "-C", osp.dirname(str(file_path))]
     # Capture the standard output and standard error
@@ -116,9 +125,11 @@ def extract_zst(file_path, limit_gb):
             break
 
     process.wait()
-
+    
     # Check if the process was successful
     assert process.returncode == 0, f"Error during unpacking of file {file_path}!"
+
+    log_disk_usage("Unzipping complete")
     return limit_exceeded
 
 
@@ -255,7 +266,7 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
         logger.info(f'Downloading the {filetype} checkpoints from Nextcloud')
 
         download_with_rclone(
-            remote_folder=remote_dir.replace("rshare/", ""),
+            remote_folder=remote_dir.replace("rshare/", "rshare:"),
             local_folder=local_dir
         )
         # todo: ensure this works as planned, because in EGI tut
@@ -276,25 +287,117 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     return local_dir
 
 
-def download_with_rclone(remote_folder, local_folder):
+def download_with_rclone(remote_folder, local_folder, timeout=600):
     """
     Function to download a directory using rclone.
 
     Args:
         remote_folder (str): Path of the remote directory to be downloaded.
         local_folder (str): Path of the local directory to save the downloaded files.
+        timeout (int): Time limit by which process should be completed
 
     Returns:
         None
     """
 
-    command = ['rclone', 'copy', 'rshare:' + remote_folder, local_folder]
-    result = subprocess.run(command, capture_output=True, text=True)
+    command = ['rclone', 'copy', remote_folder, local_folder]
 
-    if result.returncode == 0:
-        logger.info("Directory downloaded successfully.")
+    # get absolute limit by comparing to remaining available space on node
+    limit_gb = check_node_disk_limit()
+
+    try:
+        # monitor disk space usage in the background
+        monitor_thread = threading.Thread(target=monitor_disk_space,
+                                          args=(limit_gb,), daemon=True)
+        monitor_thread.start()
+        print(f"Downloading via rclone with command: {command}")    # logger.debug
+        with subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,  # Capture stdout
+            stderr=subprocess.PIPE,  # Capture stderr
+            universal_newlines=True,  # Return strings rather than bytes
+        ) as process:
+            try:
+                outs, errs = process.communicate(None, timeout)
+                if errs:
+                    raise Exception(errs)
+            except TimeoutExpired:
+                process.kill()
+                logger.error("Timeout while copying from/to remote directory: %s", exc, exc_info=True)
+                raise HTTPException(reason=exc) from exc
+            except Exception as exc:  # pylint: disable=broad-except
+                process.kill()
+                logger.error("Error while copying from/to remote directory: %s", exc, exc_info=True)
+                raise HTTPException(reason=exc) from exc
+
+    except DiskSpaceExceeded as e:
+        logger.error("Disk space exceeded while copying from/to remote directory: %s", e, exc_info=True)
+        print(f"Disk space limit exceeded: {str(e)}")    # logger.error
+
+    log_disk_usage("Rclone process complete")
+    
+    # subprocess.run(command, check=True, text=True)    # changed this because I was getting a text error?
+    # result = subprocess.run(command, capture_output=True, text=True)
+
+    # if result.returncode == 0:
+    #     logger.info("Directory downloaded successfully.")
+    # else:
+    #     logger.warning("Error executing rclone command:", result.stderr)
+
+
+def monitor_disk_space(limit_gb: int = configs.LIMIT_GB):
+    """
+    Thread function to monitor disk space and check the current usage doesn't exceed 
+    the defined limit.
+
+    Raises:
+        DiskSpaceExceeded: If available disk space was exceeded during threading.
+    """
+    limit_bytes = limit_gb * (1024 ** 3)  # convert to bytes
+    while True:
+        time.sleep(10)
+
+        stored_bytes = get_disk_usage()
+
+        if stored_bytes >= limit_bytes:
+            raise DiskSpaceExceeded(f"Exceeded maximum allowed disk space of {limit_gb} GB "
+                                    f"for '{configs.TOP_LEVEL_DIR}' folder.")
+
+def check_node_disk_limit(limit_gb: int = configs.LIMIT_GB):
+    """
+    Check overall data limit on node and redefine limit if necessary.
+
+    Args:
+        limit_gb: user defined disk space limit (in GB)
+    
+    Returns:
+        available GB on node
+    """
+    try:
+        # get available space on entire node
+        available_gb = int(subprocess.getoutput("df -h | grep 'overlay' | awk '{print $4}'").split("G")[0])
+    except ValueError as e:
+        logger.info(f"ValueError: Node disk space not readable. Using provided limit of {limit_gb} GB.")
+        available_gb = limit_gb
+
+    if available_gb >= limit_gb:
+        return limit_gb
     else:
-        logger.warning("Error executing rclone command:", result.stderr)
+        logger.warning(f"Available disk space on node ({available_gb} GB) is less than the user "
+                       f"defined limit ({limit_gb} GB). Limit will be reduced to {available_gb} GB.")
+        return available_gb
+
+
+def get_disk_usage(folder: Path = configs.TOP_LEVEL_DIR):
+    """Get the current amount of bytes stored in the provided folder.
+    """
+    return sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
+
+
+def log_disk_usage(process_message: str):
+    """Log used disk space to the terminal with a process_message describing what has occurred.
+    """
+    print(f"{process_message}: Repository currently takes up {round(get_disk_usage() / (1024 ** 3), 2)} GB.")   # logger.info(...)
 
 
 def check_train_from(directory):

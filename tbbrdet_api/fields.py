@@ -107,7 +107,7 @@ class TrainArgsSchema(Schema):
 
     seed = fields.Int(
         required=False,
-        load_default=0,
+        load_default=1,
         metadata={'description': 'Global seed number for training.'}
     )
 

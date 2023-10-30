@@ -37,10 +37,12 @@ def resolve_path(TOP_LEVEL_DIR):
         return Path(NESTED_DIR, TOP_LEVEL_DIR).absolute()
 
 
-try:  # Configure model metadata from pkg metadata
+try:  # Configure model and api metadata from the repository and submodule's metadata
     MODEL_NAME = os.getenv("MODEL_NAME", default=settings['model']['name'])
     MODEL_METADATA = _metadata(MODEL_NAME).json
-except KeyError as err:
+    API_NAME = os.getenv("API_NAME", default="tbbrdet_api")
+    API_METADATA = _metadata(API_NAME).json
+except Exception as err:
     raise RuntimeError("Undefined configuration for model name") from err
 
 try:  # Configure input files for testing and possible training
@@ -75,3 +77,9 @@ try:  # Get model backbones
         BACKBONES = ast.literal_eval(BACKBONES)
 except KeyError as err:
     raise RuntimeError("Undefined configuration for backbones") from err
+
+try:  # Define node space limits
+    LIMIT_GB = int(os.getenv("LIMIT_GB", default=settings['node']['limit_gb']))
+    DATA_LIMIT_GB = int(os.getenv("DATA_LIMIT_GB", default=settings['data']['limit_gb']))
+except Exception as err:
+    raise RuntimeError("Undefined configuration for disk memory space") from err

@@ -32,7 +32,7 @@ from pathlib import Path
 from tqdm import tqdm
 import pkg_resources
 
-from tbbrdet_api import configs, fields, misc
+from tbbrdet_api import configs, fields, misc   # replaced configs folder with config file
 from tbbrdet_api.scripts.train import main
 from tbbrdet_api.scripts.infer import infer
 from tbbrdet_api.misc import (
@@ -56,10 +56,12 @@ def get_metadata():
         A dictionary containing metadata information required by DEEPaaS.
     """
     metadata = {
-        'authors': configs.MODEL_METADATA.get("author"),
+        'api_authors': configs.API_METADATA.get("author"),
+        'model_authors': configs.MODEL_METADATA.get("author"),
         'description': configs.MODEL_METADATA.get("summary"),
-        'license': configs.MODEL_METADATA.get("license"),
-        'version': configs.MODEL_METADATA.get("version"),
+        'home_page': configs.API_METADATA.get("home_page"),
+        'license': configs.API_METADATA.get("license"),
+        'version': configs.API_METADATA.get("version"),
         'checkpoint_files_local': misc.ls_local(),
         'checkpoint_files_remote': misc.ls_remote(),
     }
@@ -104,11 +106,13 @@ def train(**args):
     Returns:
         path to the trained model
     """
+    print("Training with user provided arguments:\n", args)    # logger.info(...)
+
     # if no data in local data folder, download it from Nextcloud
     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
                     f"downloading data from '{configs.REMOTE_DATA_DIR}'...")
-        download_with_rclone(remote_folder=configs.REMOTE_DATA_DIR,
+        download_with_rclone(remote_folder="rshare:" + configs.REMOTE_DATA_DIR,
                              local_folder=configs.DATA_PATH)
 
         logger.info("Extracting data from any .tar.zst format files...")
