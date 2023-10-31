@@ -81,13 +81,12 @@ def set_log(log_dir):
     logging.getLogger().addHandler(console)
 
 
-def extract_zst(file_path, limit_gb):
+def extract_zst(file_path):
     """
     Extracting the files from the tar.zst files
 
     Args:
         file_path: pathlib.Path or str .zst file to extract
-        limit_gb: disk space limit (in GB) that shouldn't be exceeded during unpacking
 
     Returns:
         limit_exceeded (Bool): Turns true if no more data is allowed to be extracted
@@ -109,6 +108,7 @@ def extract_zst(file_path, limit_gb):
     # Capture the standard output and standard error
     process = subprocess.Popen(tar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+    limit_exceeded = False
     while True:
         line = process.stdout.readline()
         if not line:
@@ -167,8 +167,8 @@ def ls_local():
     Returns:
         list: list of relevant .pth file paths
     """
-    logger.debug("Scanning at: %s", configs.MODEL_DIR)
-    local_paths = Path(configs.MODEL_DIR).glob("**/*.pth")
+    logger.debug("Scanning at: %s", configs.MODEL_PATH)
+    local_paths = Path(configs.MODEL_PATH).glob("**/*.pth")
     # to include only the last 4 path elements, change to "str(Path(*entry.parts[-4:]))"
     return [entry for entry in local_paths
             if any(w in str(entry) for w in ["best", "weight"])]
@@ -176,66 +176,45 @@ def ls_local():
 
 def ls_remote():
     """
-    Utility to return a list of current models stored in the
-    remote folder.
+    Utility to return a list of current models (.pth files)
+    stored in the remote folder.
 
     Returns:
-        A list of strings.
+        list: List of .pth files for models / checkpoint files within the remote directory
     """
-    remote_directory = configs.REMOTE_MODEL_DIR
-    return list_pth_files_with_rclone('rshare', remote_directory)
+    remote_directory = str(configs.REMOTE_MODEL_PATH)
 
-
-def list_pth_files_with_rclone(remote_name, directory_path):
-    """
-    Function to list all .pth files (models_ckps / pretrain_ckps) within
-    a given directory in Nextcloud using rclone.
-
-    Args:
-        remote_name (str): Name of the configured Nextcloud remote in rclone.
-        directory_path (str): Path of the parent directory to list the model paths from.
-
-    Returns:
-        list: List of .pth files for models or ckp_pretrain_pth within the specified parent directory.
-    """
     # get recursive list of all files and folders in the remote directory path
-    command = ['rclone', 'lsf', remote_name + ':' + directory_path, "-R", "--absolute"]
+    command = ['rclone', 'lsf', remote_directory, "-R", "--absolute"]
     result = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = result.communicate()
 
     if result.returncode == 0:
         directories = stdout.decode().splitlines()
-        model_paths = ["rshare" + d.rstrip("/") for d in directories
+        model_paths = ["rshare:" + d.rstrip("/") for d in directories
                        if any(w in d for w in ["best", "weight"])
                        if d.endswith(".pth")]
         return model_paths
     else:
-        logger.warning("Error executing rclone command:", stderr.decode())
+        logger.error("Error executing rclone command:", stderr.decode())
         return []
 
 
-def get_model_dirs(paths):
+def get_model_paths(paths: list, pretrain: bool = False):
     """
-    Function to reduce list of paths to only those of model checkpoints
+    Function to reduce list of paths to specific model checkpoints
     Args:
         paths (list): list of all paths
+        pretrain (bool): If True, filters .pth ckp files for officially pretrained model weights
+                        If False, filters .pth ckp files for other models, f.e. previously trained
 
     Returns:
         list: only folders that contain model checkpoint paths ("best...pth"/"latest.pth")
     """
-    return list(set([osp.dirname(d.rstrip("/")) for d in paths if "weight" not in d]))
-
-
-def get_pretrain_ckpt_paths(paths):
-    """
-    Function to reduce list of paths to only those of weight checkpoints
-    Args:
-        paths (list): list of all paths
-
-    Returns:
-        list: only ckp_pretrain_pth checkpoint paths
-    """
-    return [d.rstrip("/") for d in paths if "weight" in d]
+    if pretrain:
+        return [d.rstrip("/") for d in paths if "weight" in d]
+    else:
+        return list(set([osp.dirname(d.rstrip("/")) for d in paths if "weight" not in d]))
 
 
 def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
@@ -258,19 +237,16 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     logger.debug(f"Scanning at: {remote_dir}")
 
     # get local folder, which will include the "<model-name>_coco-pretrain" / _scratch folder
-    local_base_dir = os.path.join(configs.MODEL_DIR, check_train_from(remote_dir))
+    local_base_dir = os.path.join(configs.MODEL_PATH, check_train_from(remote_dir))
     folder_to_copy = osp.basename(remote_dir)
     local_dir = osp.join(local_base_dir, folder_to_copy)
 
     if folder_to_copy not in os.listdir(local_base_dir):
         logger.info(f'Downloading the {filetype} checkpoints from Nextcloud')
 
-        download_with_rclone(
-            remote_folder=remote_dir.replace("rshare/", "rshare:"),
-            local_folder=local_dir
-        )
+        copy_rclone(frompath=remote_dir.replace("rshare:/", "rshare:"), topath=local_dir)
         # todo: ensure this works as planned, because in EGI tut
-        #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_DIR (no
+        #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_PATH (no
         #  predict_model_dir) and rclone doesn't copy the src folder!
         #  https://rclone.org/commands/rclone_copy/
 
@@ -287,20 +263,20 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     return local_dir
 
 
-def download_with_rclone(remote_folder, local_folder, timeout=600):
+def copy_rclone(frompath, topath, timeout=600):
     """
     Function to download a directory using rclone.
 
     Args:
-        remote_folder (str): Path of the remote directory to be downloaded.
-        local_folder (str): Path of the local directory to save the downloaded files.
+        frompath (str): Path from which will be downloaded f.e. remote path.
+        topath (str): Path to which downloaded paths with be saved f.e. local path.
         timeout (int): Time limit by which process should be completed
 
     Returns:
         None
     """
 
-    command = ['rclone', 'copy', remote_folder, local_folder]
+    command = ['rclone', 'copy', frompath, topath]
 
     # get absolute limit by comparing to remaining available space on node
     limit_gb = check_node_disk_limit()
@@ -361,7 +337,8 @@ def monitor_disk_space(limit_gb: int = configs.LIMIT_GB):
 
         if stored_bytes >= limit_bytes:
             raise DiskSpaceExceeded(f"Exceeded maximum allowed disk space of {limit_gb} GB "
-                                    f"for '{configs.TOP_LEVEL_DIR}' folder.")
+                                    f"for '{configs.BASE_PATH}' folder.")
+
 
 def check_node_disk_limit(limit_gb: int = configs.LIMIT_GB):
     """
@@ -388,7 +365,7 @@ def check_node_disk_limit(limit_gb: int = configs.LIMIT_GB):
         return available_gb
 
 
-def get_disk_usage(folder: Path = configs.TOP_LEVEL_DIR):
+def get_disk_usage(folder: Path = configs.BASE_PATH):
     """Get the current amount of bytes stored in the provided folder.
     """
     return sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
@@ -443,4 +420,4 @@ def get_pth_to_resume_from(directory, priority):
 
 
 if __name__ == '__main__':
-    print("Remote directory path:", configs.REMOTE_MODEL_DIR)
+    print("Remote directory path:", configs.REMOTE_MODEL_PATH)

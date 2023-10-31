@@ -12,7 +12,7 @@ from webargs import fields, validate
 from marshmallow import Schema, fields, validates_schema, ValidationError
 from tbbrdet_api import configs
 from tbbrdet_api.misc import (
-    ls_remote, ls_local, get_model_dirs, get_pretrain_ckpt_paths
+    ls_remote, ls_local, get_model_paths, get_pretrain_ckpt_paths
 )
 
 # --------------------------------------
@@ -29,12 +29,10 @@ class TrainArgsSchema(Schema):
     class Meta:
         ordered = True
 
-    # note: currently only Mask-RCNN ResNet 50 FPN - scratch and pretrained.
-    #       "Weights" below defines pretrained or not. Model choice here is therefore unnecessary.
     model = fields.Str(
         required=True,
         metadata={
-            'enum': configs.BACKBONES,
+            'enum': configs.BACKBONES,      # currently only Mask-RCNN resnet 50 FPN with swin-t
             "description": "Model name."
         }
     )
@@ -43,11 +41,12 @@ class TrainArgsSchema(Schema):
         required=False,
         load_default=None,
         metadata={
-            'enum': get_pretrain_ckpt_paths(LOCAL_PTHS) + get_pretrain_ckpt_paths(REMOTE_PTHS),
-            'description': 'If you want to train a new model with pretrained weights, choose a '
-                           'ckp_pretrain_pth file from the provided options. If only remote paths '
-                           'are available, the chosen one will be downloaded. '
-                           'You cannot combine this with resuming training.'
+            'enum': get_model_paths(LOCAL_PTHS, pretrain=True) +
+                    get_model_paths(REMOTE_PTHS, pretrain=True),
+            'description': 'If you want to train a new model with pretrained weights (transfer '
+                           'learning), choose a ckp_pretrain_pth file from the provided options. '
+                           'If only remote paths are available, the chosen one will be downloaded.'
+                           '\n NOTE: This is mutually exclusive with ckp_resume_dir!'
         }
     )
 
@@ -55,21 +54,13 @@ class TrainArgsSchema(Schema):
         required=False,
         load_default=None,
         metadata={
-            'enum': get_model_dirs(LOCAL_PTHS) + get_model_dirs(REMOTE_PTHS),
+            'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
             'description': 'If you want to resume training a model, choose a folder file from '
                            'the provided options. If only remote paths are available, '
-                           'the chosen associated folder will be downloaded. You cannot combine '
-                           'this with training a new model with pretrained weights.'
+                           'the chosen associated folder will be downloaded.'
+                           '\n NOTE: This is mutually exclusive with ckp_pretrain_pth!'
         }
     )
-
-    # # note: data config isn't necessary here, we have the mmdet configs
-    # data_config = fields.Str(
-    #     required=False,
-    #     metadata={
-    #         'description': 'Path to the data config file.'
-    #         }
-    #     )
 
     device = fields.Bool(
         required=False,
@@ -77,7 +68,7 @@ class TrainArgsSchema(Schema):
         metadata={
             'enum': [True, False],
             'description': "Computation/training device. The default is a GPU."
-                           "Training won't work without a GPU"
+                           "Training won't work without a GPU!"
         }
     )
 
@@ -116,7 +107,8 @@ class TrainArgsSchema(Schema):
         if 'ckp_resume_dir' in data and 'ckp_pretrain_pth' in data:
             raise ValidationError('Only either a model ckp_pretrain_pth path OR a checkpoint path '
                                   'can be used at once.')
-    # todo: Add ValidationError for training without a GPU (will otherwise fail in scripts.train)
+        if data['device'] is False:
+            raise ValidationError('Training requires a GPU. Please obtain one before continuing.')
 
 
 class PredictArgsSchema(Schema):
@@ -139,7 +131,7 @@ class PredictArgsSchema(Schema):
     predict_model_dir = fields.Str(
         required=True,
         metadata={
-            'enum': get_model_dirs(LOCAL_PTHS) + get_model_dirs(REMOTE_PTHS),
+            'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
             'description': 'Model to be used for prediction. If only remote folders '
                            'are available, the chosen one will be downloaded.'
         }

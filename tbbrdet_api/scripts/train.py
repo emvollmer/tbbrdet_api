@@ -62,11 +62,11 @@ def main(args):
 
     # define config to be used by train_from statement
     if "scratch" in args['train_from']:
-        args['conf'] = osp.join(configs.TOP_LEVEL_DIR, "TBBRDet/configs/mmdet/swin/"
+        args['conf'] = osp.join(configs.BASE_PATH, "TBBRDet/configs/mmdet/swin/"
                                                        "mask_rcnn_swin-t-p4-w7_fpn_fp16_ms"
                                                        "-crop-3x_coco.scratch.py")
     else:
-        args['conf'] = osp.join(configs.TOP_LEVEL_DIR, "TBBRDet/configs/mmdet/swin/"
+        args['conf'] = osp.join(configs.BASE_PATH, "TBBRDet/configs/mmdet/swin/"
                                                        "mask_rcnn_swin-t-p4-w7_fpn_fp16_ms"
                                                        "-crop-3x_coco.pretrained.py")
 

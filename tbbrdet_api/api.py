@@ -37,7 +37,7 @@ from tbbrdet_api.scripts.train import main
 from tbbrdet_api.scripts.infer import infer
 from tbbrdet_api.misc import (
     _catch_error, extract_zst,
-    download_with_rclone, download_folder_from_nextcloud,
+    copy_rclone, download_folder_from_nextcloud,
     check_train_from, get_pth_to_resume_from
 )
 
@@ -111,13 +111,12 @@ def train(**args):
     # if no data in local data folder, download it from Nextcloud
     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
-                    f"downloading data from '{configs.REMOTE_DATA_DIR}'...")
-        download_with_rclone(remote_folder="rshare:" + configs.REMOTE_DATA_DIR,
-                             local_folder=configs.DATA_PATH)
+                    f"downloading data from '{configs.REMOTE_DATA_PATH}'...")
+        copy_rclone(frompath=configs.REMOTE_DATA_PATH, topath=configs.DATA_PATH)
 
         logger.info("Extracting data from any .tar.zst format files...")
         for zst_pth in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
-            limit_exceeded = extract_zst(file_path=zst_pth, limit_gb=5)
+            limit_exceeded = extract_zst(file_path=zst_pth)
             if limit_exceeded:
                 break
 
@@ -150,7 +149,7 @@ def train(**args):
         args['train_from'] = configs.settings['train_from']['scratch']
 
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-    model_dir = osp.join(configs.MODEL_DIR, args['train_from'], timestamp)
+    model_dir = osp.join(configs.MODEL_PATH, args['train_from'], timestamp)
     if not osp.exists(model_dir):
         os.mkdir(model_dir)
     args['model_work_dir'] = model_dir
