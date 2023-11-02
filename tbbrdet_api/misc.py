@@ -237,14 +237,14 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     logger.debug(f"Scanning at: {remote_dir}")
 
     # get local folder, which will include the "<model-name>_coco-pretrain" / _scratch folder
-    local_base_dir = os.path.join(configs.MODEL_PATH, check_train_from(remote_dir))
-    folder_to_copy = osp.basename(remote_dir)
-    local_dir = osp.join(local_base_dir, folder_to_copy)
+    local_model_dir = Path(configs.MODEL_PATH, check_train_from(remote_dir))
+    folder_to_copy = Path(remote_dir).name
+    local_dir = Path(local_model_dir, folder_to_copy)
 
-    if folder_to_copy not in os.listdir(local_base_dir):
+    if folder_to_copy not in local_model_dir.iterdir():
         logger.info(f'Downloading the {filetype} checkpoints from Nextcloud')
 
-        copy_rclone(frompath=remote_dir.replace("rshare:/", "rshare:"), topath=local_dir)
+        copy_rclone(frompath=remote_dir, topath=local_dir)
         # todo: ensure this works as planned, because in EGI tut
         #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_PATH (no
         #  predict_model_dir) and rclone doesn't copy the src folder!
@@ -276,7 +276,7 @@ def copy_rclone(frompath, topath, timeout=600):
         None
     """
 
-    command = ['rclone', 'copy', frompath, topath]
+    command = ['rclone', 'copy', str(frompath), str(topath)]
 
     # get absolute limit by comparing to remaining available space on node
     limit_gb = check_node_disk_limit()

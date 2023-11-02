@@ -62,6 +62,7 @@ def get_metadata():
         'home_page': configs.API_METADATA.get("home_page"),
         'license': configs.API_METADATA.get("license"),
         'version': configs.API_METADATA.get("version"),
+        'datasets_local': [str(p) for p in configs.DATA_PATH.glob("[!.]*")],
         'checkpoint_files_local': misc.ls_local(),
         'checkpoint_files_remote': misc.ls_remote(),
     }
