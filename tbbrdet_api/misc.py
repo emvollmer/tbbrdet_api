@@ -191,7 +191,7 @@ def ls_remote():
 
     if result.returncode == 0:
         directories = stdout.decode().splitlines()
-        model_paths = ["rshare:" + d.rstrip("/") for d in directories
+        model_paths = [remote_directory + d.rstrip("/") for d in directories
                        if any(w in d for w in ["best", "weight"])
                        if d.endswith(".pth")]
         return model_paths

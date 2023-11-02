@@ -45,18 +45,14 @@ except Exception as err:
     raise RuntimeError("Undefined configuration for model name") from err
 
 try:  # Configure input files for testing and possible training
-    DATA_PATH = os.getenv("DATA_PATH", default=settings['local']['data'])
-    # make relative path absolute
-    DATA_PATH = os.path.join(BASE_PATH, DATA_PATH)
-    os.environ["DATA_PATH"] = DATA_PATH
+    DATA_PATH = os.getenv("DATA_PATH", default=Path(BASE_PATH, settings['local']['data']))
+    os.environ["DATA_PATH"] = str(DATA_PATH)
 except KeyError as err:
     raise RuntimeError("Undefined configuration for data path") from err
 
 try:  # Local path for caching sub/models
-    MODEL_PATH = os.getenv("MODEL_PATH", default=settings['local']['models'])
-    # make relative path absolute
-    MODEL_PATH = os.path.join(BASE_PATH, MODEL_PATH)
-    os.environ["MODEL_PATH"] = MODEL_PATH
+    MODEL_PATH = os.getenv("MODEL_PATH", default=Path(BASE_PATH, settings['local']['models']))
+    os.environ["MODEL_PATH"] = str(MODEL_PATH)
 except KeyError as err:
     raise RuntimeError("Undefined configuration for model path") from err
 
@@ -66,14 +62,14 @@ try:  # Path for remotely downloaded sub/models and ckp_pretrain_pth
                                   default=Path(REMOTE_PATH, settings['remote']['models']))
     REMOTE_DATA_PATH = os.getenv("REMOTE_DATA_PATH",
                                  default=Path(REMOTE_PATH, settings['remote']['data']))
-    os.environ["REMOTE_PATH"] = REMOTE_PATH
-    os.environ["REMOTE_MODEL_PATH"] = REMOTE_MODEL_PATH
-    os.environ["REMOTE_DATA_PATH"] = REMOTE_DATA_PATH
+    os.environ["REMOTE_PATH"] = str(REMOTE_PATH)
+    os.environ["REMOTE_MODEL_PATH"] = str(REMOTE_MODEL_PATH)
+    os.environ["REMOTE_DATA_PATH"] = str(REMOTE_DATA_PATH)
 except KeyError as err:
     raise RuntimeError("Undefined configuration for remote path") from err
 
 try:  # Get model backbones
-    BACKBONES = os.getenv("BACKBONES", settings['backbones']['names'])
+    BACKBONES = os.getenv("BACKBONES", default=settings['backbones']['names'])
     if isinstance(BACKBONES, str):
         # Parse the string as a list of strings
         BACKBONES = ast.literal_eval(BACKBONES)

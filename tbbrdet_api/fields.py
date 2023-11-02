@@ -12,7 +12,7 @@ from webargs import fields, validate
 from marshmallow import Schema, fields, validates_schema, ValidationError
 from tbbrdet_api import configs
 from tbbrdet_api.misc import (
-    ls_remote, ls_local, get_model_paths, get_pretrain_ckpt_paths
+    ls_remote, ls_local, get_model_paths
 )
 
 # --------------------------------------
