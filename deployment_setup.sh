@@ -91,6 +91,12 @@ if ! command -v "python --version" &> /dev/null ; then
     update-alternatives --set python /usr/bin/python3.6
 fi
 
+# ########### Install zstd (required to extract data)
+if ! which zstd &> /dev/null; then
+    echo "zstd is not installed."
+    apt install zstd
+fi
+
 # get code repository
 git clone --recurse-submodules https://github.com/emvollmer/tbbrdet_api.git
 
