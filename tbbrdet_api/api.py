@@ -116,10 +116,11 @@ def train(**args):
         copy_rclone(frompath=configs.REMOTE_DATA_PATH, topath=configs.DATA_PATH)
 
         logger.info("Extracting data from any .tar.zst format files...")
-        for zst_pth in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
-            limit_exceeded = extract_zst(file_path=zst_pth)
-            if limit_exceeded:
-                break
+        extract_zst()
+        # for zst_pth in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
+        #     limit_exceeded = extract_zst(file_path=zst_pth)
+        #     if limit_exceeded:
+        #         break
 
     # define specifics of training (from scratch, pretrained, resume)
     if args['ckp_resume_dir']:

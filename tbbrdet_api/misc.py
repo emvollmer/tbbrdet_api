@@ -16,8 +16,9 @@ import threading
 import warnings
 from pathlib import Path
 import re
+import sys
 
-from aiohttp.web import HTTPBadRequest
+from aiohttp.web import HTTPBadRequest, HTTPException
 
 from tbbrdet_api import configs
 
@@ -28,7 +29,6 @@ logger.setLevel(logging.DEBUG)
 class DiskSpaceExceeded(Exception):
     """Raised when disk space is exceeded."""
     pass
-
 
 def _catch_error(f):
     """
@@ -81,56 +81,62 @@ def set_log(log_dir):
     logging.getLogger().addHandler(console)
 
 
-def extract_zst(file_path):
+def extract_zst():
     """
     Extracting the files from the tar.zst files
 
     Args:
-        file_path: pathlib.Path or str .zst file to extract
+        file_path (Path): Path to .zst file to extract
 
     Returns:
         limit_exceeded (Bool): Turns true if no more data is allowed to be extracted
 
-    """  
-    log_disk_usage("Beginning unzipping")
+    """
+    log_disk_usage("Begin extracting .tar.zst files")
     
     # get limit by comparing to remaining available space on node
-    limit_gb = check_node_disk_limit(configs.DATA_LIMIT_GB)
-    limit_bytes = limit_gb * (1024 ** 3)    # convert to bytes
+    #limit_gb = check_node_disk_limit(configs.DATA_LIMIT_GB)
+    #limit_bytes = limit_gb * (1024 ** 3)    # convert to bytes
 
-    # get the current amount of bytes stored in the data directory
-    stored_bytes = get_disk_usage(configs.DATA_PATH)
+    # # get the current amount of bytes stored in the data directory
+    # stored_bytes = get_disk_usage(configs.DATA_PATH)
 
-    print(f"Data folder currently contains {round(stored_bytes / (1024 ** 3), 2)} GB.\n"
-          f"Now unpacking '{file_path}'...")
-    tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
-                   str(file_path), "-C", osp.dirname(str(file_path))]
-    # Capture the standard output and standard error
-    process = subprocess.Popen(tar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    for zst_path in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
+        # print(f"Data folder currently contains {round(stored_bytes / (1024 ** 3), 2)} GB.\n"
+        #       f"Now unpacking '{file_path}'...")
+        tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
+                       str(zst_path), "-C", str(zst_path.parent)]
+        
+        run_subprocess(tar_command, process_message=f"unpacking '{zst_path.name}'", limit_gb=configs.DATA_LIMIT_GB)
+        print("========= Continuing...")
 
-    limit_exceeded = False
-    while True:
-        line = process.stdout.readline()
-        if not line:
-            break
+    print("================================================= Continuing...")
+    # # Capture the standard output and standard error
+    # process = subprocess.Popen(tar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # Update the extracted size with the size of the current file
-        stored_bytes += len(line)
+    # limit_exceeded = False
+    # while True:
+    #     line = process.stdout.readline()
+    #     if not line:
+    #         break
 
-        # Check if the extracted size exceeds the limit
-        if stored_bytes >= limit_bytes:
-            print(f"Exceeded maximum allowed size of {limit_gb} GB for Data folder.")
-            limit_exceeded = True
-            process.terminate()
-            break
+    #     # Update the extracted size with the size of the current file
+    #     stored_bytes += len(line)
 
-    process.wait()
+    #     # Check if the extracted size exceeds the limit
+    #     if stored_bytes >= limit_bytes:
+    #         print(f"Exceeded maximum allowed size of {limit_gb} GB for Data folder.")
+    #         limit_exceeded = True
+    #         process.terminate()
+    #         break
+
+    # process.wait()
     
-    # Check if the process was successful
-    assert process.returncode == 0, f"Error during unpacking of file {file_path}!"
+    # # Check if the process was successful
+    # assert process.returncode == 0, f"Error during unpacking of file {file_path}!"
 
-    log_disk_usage("Unzipping complete")
-    return limit_exceeded
+    # log_disk_usage("Extracting .tar.zst file complete")
+    # return limit_exceeded
 
 
 def launch_cmd(logdir, port):
@@ -174,7 +180,7 @@ def ls_local():
             if any(w in str(entry) for w in ["best", "weight"])]
 
 
-def ls_remote():
+def ls_remote(remote_directory: Path = configs.REMOTE_MODEL_PATH):
     """
     Utility to return a list of current models (.pth files)
     stored in the remote folder.
@@ -182,8 +188,7 @@ def ls_remote():
     Returns:
         list: List of .pth files for models / checkpoint files within the remote directory
     """
-    remote_directory = str(configs.REMOTE_MODEL_PATH)
-
+    remote_directory = str(remote_directory)
     # get recursive list of all files and folders in the remote directory path
     command = ['rclone', 'lsf', remote_directory, "-R", "--absolute"]
     result = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -191,10 +196,13 @@ def ls_remote():
 
     if result.returncode == 0:
         directories = stdout.decode().splitlines()
-        model_paths = [remote_directory + d.rstrip("/") for d in directories
-                       if any(w in d for w in ["best", "weight"])
-                       if d.endswith(".pth")]
-        return model_paths
+        if remote_directory == str(configs.REMOTE_MODEL_PATH):
+            model_paths = [remote_directory + d.rstrip("/") for d in directories
+                           if any(w in d for w in ["best", "weight"])
+                           if d.endswith(".pth")]
+            return model_paths
+        else:
+            return [remote_directory + d.rstrip("/") for d in directories]
     else:
         logger.error("Error executing rclone command:", stderr.decode())
         return []
@@ -220,6 +228,7 @@ def get_model_paths(paths: list, pretrain: bool = False):
 def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     """
     Downloads the remote folder from nextcloud to a specified checkpoint path.
+    todo: Remove this function and just use copy_rclone instead!!!
 
     Args:
         remote_dir (str): The path to the model / weights folder in NextCloud
@@ -263,30 +272,75 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     return local_dir
 
 
-def copy_rclone(frompath, topath, timeout=600):
+def copy_rclone(frompath: Path, topath: Path, timeout=600):
     """
-    Function to download a directory using rclone.
-
+    Function to download a directory/file using rclone.
+    NOTE: This will only work if we're copying to a local directory.
     Args:
-        frompath (str): Path from which will be downloaded f.e. remote path.
-        topath (str): Path to which downloaded paths with be saved f.e. local path.
+        frompath (Path): Path from which will be downloaded f.e. remote path.
+        topath (Path): Folder to which downloaded paths with be saved f.e. local path.
         timeout (int): Time limit by which process should be completed
 
     Returns:
         None
     """
+    # check if the frompath is a folder or file, if it's a folder get filenames from within
+    if not frompath.suffix:
+        if "rshare" in str(frompath):
+            file_names = [Path(p).name for p in ls_remote(frompath)]
+        else:
+            file_names = [p.name for p in frompath.iterdir()]
+    else:
+        file_names = [frompath.name]
 
-    command = ['rclone', 'copy', str(frompath), str(topath)]
+    # check if folder/file to be copied already exists in destination directory (topath)
+    if file_names and not set(file_names).issubset(os.listdir(topath)):
+        logger.info(f"Copying '{frompath}' to '{topath}'...")  
+        command = ['rclone', 'copy', str(frompath), str(topath)]
+        run_subprocess(command, process_message="copying with rclone")
 
+        # check if folder/file now exists in destination directory (topath)
+        if not set(file_names).issubset(os.listdir(topath)):
+            logger.error(f"An error must have occured during copying, as "
+                         f"no file(s) '{file_names}' exist(s) in '{topath}'!")
+            raise
+
+        logger.info(f"'{file_names}' was/were successfully copied to '{topath}'!")
+    else:
+        logger.warning(f"Skipping download of '{frompath}' as the "
+                       f"file(s) '{file_names}' already exist(s) in '{topath}'!")
+
+
+def run_subprocess(command: list, process_message: str, limit_gb: int = configs.LIMIT_GB, timeout: int = 500):
+    """
+    Function to run a subprocess command.
+
+    Args:
+        command (list): Command to be run.
+        process_message (str): Message to be printed to the console.
+        limit_gb (int): Limit on the amount of disk space available on the node.
+        timeout (int): Time limit by which process is limited (in case it gets stuck).
+
+    Raises:
+        TimeoutExpired: If timeout exceeded
+        DiskSpaceExceeded: If disk space limit exceeded
+        Exception: If any other error occured
+    """
+    log_disk_usage(f"Begin: {process_message}")
     # get absolute limit by comparing to remaining available space on node
-    limit_gb = check_node_disk_limit()
+    limit_gb = check_node_disk_limit(limit_gb)
+
+    if get_disk_usage() / (1024 ** 3) > limit_gb:
+        raise DiskSpaceExceeded(f"Disk space limit of {str(limit_gb)} GB already exceeded!")
+        log_disk_usage(f"Failed: {process_message}")
+        return
 
     try:
         # monitor disk space usage in the background
         monitor_thread = threading.Thread(target=monitor_disk_space,
                                           args=(limit_gb,), daemon=True)
         monitor_thread.start()
-        print(f"Downloading via rclone with command: {command}")    # logger.debug
+        print(f"Running subprocess command: {command}")    # logger.debug
         with subprocess.Popen(
             command,
             stdout=subprocess.PIPE,  # Capture stdout
@@ -297,28 +351,23 @@ def copy_rclone(frompath, topath, timeout=600):
                 outs, errs = process.communicate(None, timeout)
                 if errs:
                     raise Exception(errs)
-            except TimeoutExpired:
+            except TimeoutExpired as exc:
                 process.kill()
-                logger.error("Timeout while copying from/to remote directory: %s", exc, exc_info=True)
+                logger.error(f"Timeout while {process_message}: %s", exc, exc_info=True)
                 raise HTTPException(reason=exc) from exc
             except Exception as exc:  # pylint: disable=broad-except
                 process.kill()
-                logger.error("Error while copying from/to remote directory: %s", exc, exc_info=True)
+                logger.error(f"Error while {process_message}: %s", exc, exc_info=True)
                 raise HTTPException(reason=exc) from exc
 
     except DiskSpaceExceeded as e:
-        logger.error("Disk space exceeded while copying from/to remote directory: %s", e, exc_info=True)
+        logger.error(f"Disk space exceeded while {process_message}: %s", e, exc_info=True)
         print(f"Disk space limit exceeded: {str(e)}")    # logger.error
+        # NOTE: This doesn't prevent the program from continuing to run!!!
+        raise
 
-    log_disk_usage("Rclone process complete")
-    
-    # subprocess.run(command, check=True, text=True)    # changed this because I was getting a text error?
-    # result = subprocess.run(command, capture_output=True, text=True)
-
-    # if result.returncode == 0:
-    #     logger.info("Directory downloaded successfully.")
-    # else:
-    #     logger.warning("Error executing rclone command:", result.stderr)
+    log_disk_usage(f"Finished: {process_message}")
+    return
 
 
 def monitor_disk_space(limit_gb: int = configs.LIMIT_GB):
@@ -331,7 +380,7 @@ def monitor_disk_space(limit_gb: int = configs.LIMIT_GB):
     """
     limit_bytes = limit_gb * (1024 ** 3)  # convert to bytes
     while True:
-        time.sleep(10)
+        time.sleep(3)
 
         stored_bytes = get_disk_usage()
 

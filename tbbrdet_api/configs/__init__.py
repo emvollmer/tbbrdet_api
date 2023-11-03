@@ -46,7 +46,7 @@ except Exception as err:
 
 try:  # Configure input files for testing and possible training
     DATA_PATH = os.getenv("DATA_PATH", default=Path(BASE_PATH, settings['local']['data']))
-    os.environ["DATA_PATH"] = str(DATA_PATH)
+    # os.environ["DATA_PATH"] = str(DATA_PATH)  # doesn't work with Path functions otherwise
 except KeyError as err:
     raise RuntimeError("Undefined configuration for data path") from err
 
@@ -57,14 +57,14 @@ except KeyError as err:
     raise RuntimeError("Undefined configuration for model path") from err
 
 try:  # Path for remotely downloaded sub/models and ckp_pretrain_pth
-    REMOTE_PATH = os.getenv("REMOTE_MODEL_PATH", default=Path(settings['remote']['path']))
+    REMOTE_PATH = os.getenv("REMOTE_PATH", default=Path(settings['remote']['path']))
     REMOTE_MODEL_PATH = os.getenv("REMOTE_MODEL_PATH",
                                   default=Path(REMOTE_PATH, settings['remote']['models']))
     REMOTE_DATA_PATH = os.getenv("REMOTE_DATA_PATH",
                                  default=Path(REMOTE_PATH, settings['remote']['data']))
     os.environ["REMOTE_PATH"] = str(REMOTE_PATH)
     os.environ["REMOTE_MODEL_PATH"] = str(REMOTE_MODEL_PATH)
-    os.environ["REMOTE_DATA_PATH"] = str(REMOTE_DATA_PATH)
+    # os.environ["REMOTE_DATA_PATH"] = str(REMOTE_DATA_PATH)    # doesn't work with Path functions otherwise
 except KeyError as err:
     raise RuntimeError("Undefined configuration for remote path") from err
 
@@ -77,8 +77,8 @@ except KeyError as err:
     raise RuntimeError("Undefined configuration for backbones") from err
 
 try:  # Define node space limits
-    LIMIT_GB = int(os.getenv("LIMIT_GB", default=settings['local']['limit_gb']))
-    DATA_LIMIT_GB = int(os.getenv("DATA_LIMIT_GB",
-                                  default=settings['local']['data_limit_gb']))
+    LIMIT_GB = os.getenv("LIMIT_GB", default=int(settings['local']['limit_gb']))
+    DATA_LIMIT_GB = os.getenv("DATA_LIMIT_GB",
+                                  default=int(settings['local']['data_limit_gb']))
 except Exception as err:
     raise RuntimeError("Undefined configuration for disk memory space") from err
