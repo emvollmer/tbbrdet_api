@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 import pkg_resources
+import shutil
 
 from tbbrdet_api import configs, fields, misc   # replaced configs folder with config file
 from tbbrdet_api.scripts.train import main
@@ -63,6 +64,7 @@ def get_metadata():
         'license': configs.API_METADATA.get("license"),
         'version': configs.API_METADATA.get("version"),
         'datasets_local': [str(p) for p in configs.DATA_PATH.glob("[!.]*")],
+        'datasets_remote': [str(p) for p in Path("/storage/tbbrdet/datasets").glob("[!.]*")],
         'checkpoint_files_local': misc.ls_local(),
         'checkpoint_files_remote': misc.ls_remote(),
     }
@@ -113,14 +115,18 @@ def train(**args):
     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
                     f"downloading data from '{configs.REMOTE_DATA_PATH}'...")
-        copy_rclone(frompath=configs.REMOTE_DATA_PATH, topath=configs.DATA_PATH)
+        # copy_rclone(frompath=configs.REMOTE_DATA_PATH, topath=configs.DATA_PATH)
 
-        logger.info("Extracting data from any .tar.zst format files...")
+        logger.info("Extracting data from any .tar.zst files...")
         extract_zst()
-        # for zst_pth in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
-        #     limit_exceeded = extract_zst(file_path=zst_pth)
-        #     if limit_exceeded:
-        #         break
+
+        for json_path in Path("/storage/tbbrdet/datasets").glob("*.json"):
+            if "100-104" in json_path.name:
+                shutil.copy(json_path, Path(configs.DATA_PATH, "train"))
+            elif "105" in json_path.name:
+                shutil.copy(json_path, Path(configs.DATA_PATH, "test"))
+            else:
+                logger.warning(f"Annotation file {json_path} neither the train nor test file. Not copying.")
 
     # define specifics of training (from scratch, pretrained, resume)
     if args['ckp_resume_dir']:
@@ -151,14 +157,14 @@ def train(**args):
         args['train_from'] = configs.settings['train_from']['scratch']
 
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-    model_dir = osp.join(configs.MODEL_PATH, args['train_from'], timestamp)
-    if not osp.exists(model_dir):
-        os.mkdir(model_dir)
-    args['model_work_dir'] = model_dir
+    model_dir = Path(configs.MODEL_PATH, args['train_from'], timestamp)
+    if not model_dir.is_dir():
+        model_dir.mkdir(parents=True, exist_ok=True)
+    args['model_dir'] = str(model_dir)
 
     main(args)
 
-    return {f'Model and logs were saved to {args["name"]}'}
+    return {f'Model and logs were saved to {args["model_dir"]}'}
 
 
 def predict(**args):
@@ -169,7 +175,9 @@ def predict(**args):
     Returns:
         either a json file or png image with bounding box
     """
+    print("Predicting with user provided arguments:\n", args)    # logger.info(...)
     # if the selected model is from the remote repository, download it
+
     if "rshare" in args['predict_model_dir']:
         args['predict_model_dir'] = download_folder_from_nextcloud(
             remote_dir=args['predict_model_dir'], filetype="model", check="best"

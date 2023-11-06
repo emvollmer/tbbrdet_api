@@ -68,6 +68,7 @@ def _fields_to_dict(fields_in):
 
 
 def set_log(log_dir):
+    # TODO: Add logger parameters to config and use those values for setLevel
     logging.basicConfig(
         # level=logging.DEBUG,
         format='%(message)s',
@@ -94,49 +95,11 @@ def extract_zst():
     """
     log_disk_usage("Begin extracting .tar.zst files")
     
-    # get limit by comparing to remaining available space on node
-    #limit_gb = check_node_disk_limit(configs.DATA_LIMIT_GB)
-    #limit_bytes = limit_gb * (1024 ** 3)    # convert to bytes
-
-    # # get the current amount of bytes stored in the data directory
-    # stored_bytes = get_disk_usage(configs.DATA_PATH)
-
-    for zst_path in Path(configs.DATA_PATH).glob("**/*.tar.zst"):
-        # print(f"Data folder currently contains {round(stored_bytes / (1024 ** 3), 2)} GB.\n"
-        #       f"Now unpacking '{file_path}'...")
+    for zst_path in Path("/storage/tbbrdet/datasets").glob("**/*.tar.zst"):
         tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
-                       str(zst_path), "-C", str(zst_path.parent)]
+                       str(zst_path), "-C", str(configs.DATA_PATH)]
         
         run_subprocess(tar_command, process_message=f"unpacking '{zst_path.name}'", limit_gb=configs.DATA_LIMIT_GB)
-        print("========= Continuing...")
-
-    print("================================================= Continuing...")
-    # # Capture the standard output and standard error
-    # process = subprocess.Popen(tar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    # limit_exceeded = False
-    # while True:
-    #     line = process.stdout.readline()
-    #     if not line:
-    #         break
-
-    #     # Update the extracted size with the size of the current file
-    #     stored_bytes += len(line)
-
-    #     # Check if the extracted size exceeds the limit
-    #     if stored_bytes >= limit_bytes:
-    #         print(f"Exceeded maximum allowed size of {limit_gb} GB for Data folder.")
-    #         limit_exceeded = True
-    #         process.terminate()
-    #         break
-
-    # process.wait()
-    
-    # # Check if the process was successful
-    # assert process.returncode == 0, f"Error during unpacking of file {file_path}!"
-
-    # log_disk_usage("Extracting .tar.zst file complete")
-    # return limit_exceeded
 
 
 def launch_cmd(logdir, port):
@@ -176,7 +139,7 @@ def ls_local():
     logger.debug("Scanning at: %s", configs.MODEL_PATH)
     local_paths = Path(configs.MODEL_PATH).glob("**/*.pth")
     # to include only the last 4 path elements, change to "str(Path(*entry.parts[-4:]))"
-    return [entry for entry in local_paths
+    return [str(entry) for entry in local_paths
             if any(w in str(entry) for w in ["best", "weight"])]
 
 

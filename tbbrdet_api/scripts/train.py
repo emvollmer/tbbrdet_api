@@ -31,12 +31,12 @@ import logging
 from pathlib import Path
 import yaml
 # --------------------------------------
-from TBBRDet.scripts.mmdet import (
-    train, numpy_loader, common_vars
-)
+# from TBBRDet.scripts.mmdet import (
+#     train, numpy_loader, common_vars
+# )
 from tbbrdet_api import configs
 from tbbrdet_api.misc import (
-    set_log, get_pth_to_resume_from
+    set_log, get_pth_to_resume_from, run_subprocess
 )
 
 logger = logging.getLogger('__name__')
@@ -50,7 +50,7 @@ def main(args):
         args: Arguments from fields.py (user inputs in swagger ui)
     """
     # setting parameters and constants from user arguments
-    args['cfg_options'] = {'data_root': configs.DATA_PATH,
+    args['cfg_options'] = {'data_root': str(configs.DATA_PATH),
                            'runner.max_epochs': args['epochs'],
                            'data.samples_per_gpu': args['batch'],
                            'data.workers_per_gpu': args['workers']
@@ -73,29 +73,31 @@ def main(args):
     CKPT_PRETRAIN = args['ckp_pretrain_pth']
     CKPT_RESUME = args['ckp_resume_dir']
     args['ckp_resume_pth'] = None
-    OUT_DIR = args['model_work_dir']
+    OUT_DIR = args['model_dir']
 
     # define training command for resuming model training
     if CKPT_RESUME is not None:
-        logger.info('Resuming training of a previously trained model...'
-                    f"\nconfig: {args['conf']}\nwork_dir: {OUT_DIR}\nresume from: {CKPT_RESUME}")
+        print('Resuming training of a previously trained model...'
+              f"\nconfig: {args['conf']}\nwork_dir: {OUT_DIR}\nresume from: {CKPT_RESUME}")     # logger.info
 
         pth_name = get_pth_to_resume_from(directory=CKPT_RESUME,
                                           priority=['latest', 'best', 'epoch'])
+        # TODO: Turn assert into a try-except (which will fail when we try to define args value if None)
         assert pth_name, f"No '.pth' files in {CKPT_RESUME} to resume from!"
-        args['ckp_resume_pth'] = osp.join(CKPT_RESUME, pth_name)    # amend ckpt resume path
+        # args['ckp_resume_pth'] = osp.join(CKPT_RESUME, pth_name)    # amend ckpt resume path
+        args['cfg_options']['resume_from'] = osp.join(CKPT_RESUME, pth_name)
 
     # define training command for starting new training with COCO pretrained weights
     elif CKPT_PRETRAIN is not None:
-        logger.info('Training model from COCO pretrained weights...'
-                    f"\nconfig: {args['conf']}\nwork_dir: {OUT_DIR}\nload from: {CKPT_PRETRAIN}")
+        print('Training model from COCO pretrained weights...'
+              f"\nconfig: {args['conf']}\nwork_dir: {OUT_DIR}\nload from: {CKPT_PRETRAIN}")     # logger.info
 
         args['cfg_options']['load_from'] = CKPT_PRETRAIN     # amend cfg_options to include load
 
     # define training command for training from scratch
     else:
-        logger.info(f"Training model from scratch..."
-                    f"\nconfig: {args['conf']}\nwork_dir: {OUT_DIR}")
+        print(f"Training model from scratch..."
+              f"\nconfig: {args['conf']}\nwork_dir: {OUT_DIR}")     # logger.info
 
     # Set logging file.
     set_log(OUT_DIR)
@@ -106,14 +108,18 @@ def main(args):
 
     # call on TBBRDet training scripts
     # note: this may have to be done via subprocess, probably won't work by external function call
-    train.main(
-        config=args['conf'], work_dir=OUT_DIR,
-        resume_from=args['ckp_resume_pth'], auto_resume=False, no_validate=False,
-        gpus=None, gpu_ids=None, gpu_id=0,
-        seed=args['seed'], deterministic=True, launcher='none', local_rank=0,
-        cfg_options=args['cfg_options'],
-    )
+    cfg_options_str = ' '.join([f"'{key}'={value}" for key, value in args['cfg_options'].items()])
+    train_cmd = ["/bin/bash", str(Path(configs.API_PATH, 'scripts', 'execute_train_evaluate.sh')),
+                 "--config-path", args['conf'],
+                 "--work-dir", OUT_DIR,
+                 "--seed", str(args['seed']),
+                 "--cfg-options", cfg_options_str,
+                 "--eval", args['eval']]
+    print(f"====================\n"
+          f"Training with train_cmd:\n{train_cmd}\n"
+          f"=====================")
 
+    run_subprocess(command=train_cmd, process_message="training", timeout=10000)
     logger.info(f'Model and logs were saved to {args["name"]}')
 
 
@@ -128,9 +134,10 @@ def yaml_save(file_path=None, data={}):
         file_path: path to where yaml file will be saved to
         data: data to be saved
     """
-    with open(file_path, 'w') as f:
+    with open(str(file_path), 'w') as f:
         yaml.safe_dump(
-            {k: str(v) if isinstance(v, Path) else v for k, v in data.items()},
+            {k: str(v) for k, v in data.items()},
+            # {k: str(v) if isinstance(v, Path) else v for k, v in data.items()},
             f,
             sort_keys=False
         )

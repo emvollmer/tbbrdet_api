@@ -52,7 +52,7 @@ except KeyError as err:
 
 try:  # Local path for caching sub/models
     MODEL_PATH = os.getenv("MODEL_PATH", default=Path(BASE_PATH, settings['local']['models']))
-    os.environ["MODEL_PATH"] = str(MODEL_PATH)
+    # os.environ["MODEL_PATH"] = str(MODEL_PATH)
 except KeyError as err:
     raise RuntimeError("Undefined configuration for model path") from err
 
@@ -62,8 +62,8 @@ try:  # Path for remotely downloaded sub/models and ckp_pretrain_pth
                                   default=Path(REMOTE_PATH, settings['remote']['models']))
     REMOTE_DATA_PATH = os.getenv("REMOTE_DATA_PATH",
                                  default=Path(REMOTE_PATH, settings['remote']['data']))
-    os.environ["REMOTE_PATH"] = str(REMOTE_PATH)
-    os.environ["REMOTE_MODEL_PATH"] = str(REMOTE_MODEL_PATH)
+    # os.environ["REMOTE_PATH"] = str(REMOTE_PATH)
+    # os.environ["REMOTE_MODEL_PATH"] = str(REMOTE_MODEL_PATH)
     # os.environ["REMOTE_DATA_PATH"] = str(REMOTE_DATA_PATH)    # doesn't work with Path functions otherwise
 except KeyError as err:
     raise RuntimeError("Undefined configuration for remote path") from err
