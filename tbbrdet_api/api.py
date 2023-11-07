@@ -22,6 +22,7 @@ module [2].
 [1]: https://docs.deep-hybrid-datacloud.eu/
 [2]: https://github.com/deephdc/demo_app
 """
+import ast
 import logging
 import os
 import os.path as osp
@@ -29,9 +30,8 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from tqdm import tqdm
+# from tqdm import tqdm
 import pkg_resources
-import shutil
 
 from tbbrdet_api import configs, fields, misc   # replaced configs folder with config file
 from tbbrdet_api.scripts.train import main
@@ -130,7 +130,7 @@ def train(**args):
 
     # define specifics of training (from scratch, pretrained, resume)
     if args['ckp_resume_dir']:
-        # define whether we're training from scratch or coco
+        # define whether we're resuming the training of a model from scratch or coco
         args['train_from'] = check_train_from(args['ckp_resume_dir'])
 
         # download model if necessary
@@ -165,6 +165,54 @@ def train(**args):
     main(args)
 
     return {f'Model and logs were saved to {args["model_dir"]}'}
+
+
+# def train_new(**args):
+#     """
+#     Performs training on the dataset.
+
+#     TODO: Before usable, the following adjustments are necessary:
+#     - fields.TrainArgsSchema(): add field "architecture"
+#     - fields.TrainArgsSchema(): add field "train_from" with options: "scratch", "coco", model_folder (folders with "latest.pth" in them)
+#     - configs.settings: change definition of remote "rshare:" to "/storage/"
+
+#     Args:
+#         **args: keyword arguments from get_train_args.
+#     Returns:
+#         path to the trained model
+#     """
+#     print("Training with user provided arguments:\n", args)    # logger.info(...)
+
+#     if not args['device'] or (args['device'] and not torch.cuda.is_available()):
+#         logger.error("Training requires a GPU. Please ensure a GPU is available before training.")
+#         sys.exit(1)
+
+#     # if no data in local data folder, download it from Nextcloud
+#     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
+#         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
+#                     f"downloading data from '{configs.REMOTE_DATA_PATH}'...")
+
+#         logger.info("Extracting data from any .tar.zst files...")
+#         extract_zst()
+
+#         for json_path in configs.REMOTE_DATA_PATH.glob("*.json"):
+#             if "100-104" in json_path.name:
+#                 shutil.copy(json_path, Path(configs.DATA_PATH, "train"))
+#             elif "105" in json_path.name:
+#                 shutil.copy(json_path, Path(configs.DATA_PATH, "test"))
+#             else:
+#                 logger.warning(f"Annotation file {json_path} neither the train nor test file. Not copying.")
+
+#     # training config definitions
+#     args['cfg_options'] = {'data_root': str(configs.DATA_PATH),
+#                           'runner.max_epochs': args['epochs'],
+#                           'data.samples_per_gpu': args['batch'],
+#                           'data.workers_per_gpu': args['workers']
+#                           }
+
+#     main_new(args)
+
+#     return {f'Model and logs were saved to {args["model_dir"]}'}
 
 
 def predict(**args):
@@ -211,7 +259,8 @@ if __name__ == '__main__':
         'batch': 1,
         'lr': 0.0001,
         # 'imgsz': 640,
-        'seed': 42
+        'seed': 42,
+        'eval': "bbox"
     }
     train(**ex_args)
 

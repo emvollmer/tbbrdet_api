@@ -24,6 +24,7 @@ cd $submodule_dir/scripts/mmdet/
 # Initialize empty cfg options array
 config_path=""
 model_dir=""   # this is the directory to which the model will be saved
+auto_resume=""
 cfg_options=()
 eval=""   # this can be either "bbox" or "segm"
 
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
         --seed)
             seed_num="$2"
             shift 2
+            ;;
+        --auto-resume)
+            auto_resume="--auto-resume"
+            shift
             ;;
         --cfg-options)
             shift
@@ -67,13 +72,15 @@ done
 # ------------------- TRAINING
 # CMD: python train.py <CONFIG_PATH> --work-dir <MODEL_DIR>
 # --seed <SEED_NUM> --deterministic --cfg-options 'data_root'='/path/to/datasets' 'load_from'='/path/to/pretrained/weights.pth'
-training_cmd="python train.py $config_path --work-dir $model_dir --seed $seed_num --deterministic"
+training_cmd="python train.py $config_path --work-dir $model_dir --seed $seed_num --deterministic $auto_resume"
 
 cfg_options_cmd=$(handle_optional_flag "--cfg-options" cfg_options[@])
 training_cmd="$training_cmd $cfg_options_cmd"
 
 # Run nvidia-smi in the background and redirect its output to gpu_monitoring.log
-nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,utilization.gpu,utilization.memory,memory.total,memory.free,memory.used --format=csv -l 1 > gpu_monitoring.log &
+timestamp=$(date +"%Y%m%d_%H%M%S")
+gpu_monitoring_filename="${timestamp}_gpu_monitoring.log"
+nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,utilization.gpu,utilization.memory,memory.total,memory.free,memory.used --format=csv -l 1 > $gpu_monitoring_filename &
 # Store the process ID (PID) of the background nvidia-smi process
 nvidia_smi_pid=$!
 stop=0
@@ -95,9 +102,9 @@ fi
 kill "$nvidia_smi_pid"
 
 # Move gpu monitoring results into the most recent timestamp directory
-if [ -e "gpu_monitoring.log" ]; then
-    mv "gpu_monitoring.log" "$model_dir/"
-    echo "Moved gpu monitoring log to $model_dir"
+if [ -e $gpu_monitoring_filename ]; then
+    mv $gpu_monitoring_filename "$model_dir/"
+    echo "Moved gpu monitoring log '$gpu_monitoring_filename' to $model_dir"
 fi
 
 # Stop the script run if the process had a non-zero exit status
@@ -119,8 +126,8 @@ if [ ! -d "$eval_dir" ]; then
 fi
 
 # Define evaluation command
-model_config_path=$(find $model_dir -type f -name *.py -not -path "*/.*")
-model_path=$(find $model_dir -type f -name best* -not -path "*/.*")
+# find the most recent "best" model path (there may be multiple if training was resumed)
+model_path=$(find $model_dir -type f -name best* -not -path "*/.*" -exec ls -lt {} + | head -n 1 | awk '{print $NF}')
 echo "Found model_path at $model_path"
 if [[ ! -f $model_path ]]; then
     echo "No best model .pth in model directory $model_dir! No evaluation possible..."
@@ -131,12 +138,15 @@ if [[ ! -f $model_path ]]; then
     fi
 fi
 
+# find the most recent config file in the model directory
+model_config_path=$(find "$model_dir" -type f -name "*.py" -not -path "*/.*" -exec ls -lt {} + | head -n 1 | awk '{print $NF}')
+
 epoch_number=$(echo "$model_path" | sed -n 's/.*_epoch_\([0-9]*\)\.pth/\1/p')
-eval_file='${eval_dir}/best_AR\@1000_epoch_${epoch_number}-eval_${eval}.pickle'
+eval_file='${eval_dir}/best_AR@1000_epoch_${epoch_number}-eval_${eval}.pickle'
 echo "Creating evaluation file at $eval_file"
 
 # note: Potentially change config_path to the path of the config in the model_dir
-eval_cmd="python test.py $config_path $model_path --work-dir $eval_dir --out $eval_file --eval $eval"
+eval_cmd="python test.py $model_config_path $model_path --work-dir $eval_dir --out $eval_file --eval $eval"
 
 # Execute the evaluation script as a module
 echo "------------------------------------"

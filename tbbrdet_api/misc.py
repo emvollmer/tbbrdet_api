@@ -17,6 +17,7 @@ import warnings
 from pathlib import Path
 import re
 import sys
+import shutil
 
 from aiohttp.web import HTTPBadRequest, HTTPException
 
@@ -206,31 +207,57 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
                   after downloading the model from the URL.
 
     """
+    remote_dir = remote_dir.replace("rshare:", "/storage/")
     logger.debug(f"Scanning at: {remote_dir}")
 
     # get local folder, which will include the "<model-name>_coco-pretrain" / _scratch folder
     local_model_dir = Path(configs.MODEL_PATH, check_train_from(remote_dir))
+    local_model_dir.mkdir(parents=True, exist_ok=True)
+
     folder_to_copy = Path(remote_dir).name
     local_dir = Path(local_model_dir, folder_to_copy)
 
-    if folder_to_copy not in local_model_dir.iterdir():
-        logger.info(f'Downloading the {filetype} checkpoints from Nextcloud')
+    try:
+        print(f'Remote_dir: {remote_dir}\nDestination_dir: {local_dir}')
+        #if path already exists, remove it before copying with copytree()
+        if (not local_dir.is_dir()) or (local_dir.is_dir() and not any(check in d for d in os.listdir(local_dir))):
+            print(f'Downloading the {filetype} checkpoints from Nextcloud')     # logger.info
 
-        copy_rclone(frompath=remote_dir, topath=local_dir)
-        # todo: ensure this works as planned, because in EGI tut
-        #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_PATH (no
-        #  predict_model_dir) and rclone doesn't copy the src folder!
-        #  https://rclone.org/commands/rclone_copy/
+            shutil.rmtree(local_dir)
+            shutil.copytree(remote_dir, local_dir)
 
-        if any(check in d for d in os.listdir(local_dir)):
-            raise Exception(f"Folder with {filetype} wasn't copied to '{local_dir}', due to "
-                            f" missing {filetype} path files in '{remote_dir}'!")
+            if not any(check in d for d in os.listdir(local_dir)):
+                raise FileNotFoundError(f"Folder with {filetype} wasn't copied to '{local_dir}', due to "
+                                        f" missing {filetype} path files in '{remote_dir}'!")
+        else:
+            logger.info(f"Skipping download of '{remote_dir}' as the "
+                        f"folder with {filetype} already exists in '{local_dir}'!")
+    except OSError as e:
+        # If the error was caused because the source wasn't a directory
+        print('Directory not copied because remote source directory not a directory. Error: %s' % e)
+    except FileNotFoundError as e:
+        print('Error in copying from {remote_dir} to {local_dir. Error: %s' % e)
 
-        logger.info(f"The remote {filetype} folder '{remote_dir}' was copied to '{local_dir}'")
+    # if folder_to_copy not in local_model_dir.iterdir() or not any(check in d for d in os.listdir(local_dir)):
+    #     print(f'Downloading the {filetype} checkpoints from Nextcloud')     # logger.info
+    #     print(f'Remote_dir: {remote_dir}\nDestination_dir: {local_dir}')
 
-    else:
-        logger.info(f"Skipping download of '{remote_dir}' as the "
-                    f"folder with {filetype} already exists in '{local_dir}'!")
+    #     shutil.copytree(remote_dir, local_dir)
+    #     # copy_rclone(frompath=remote_dir, topath=local_dir)
+    #     # todo: ensure this works as planned, because in EGI tut
+    #     #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_PATH (no
+    #     #  predict_model_dir) and rclone doesn't copy the src folder!
+    #     #  https://rclone.org/commands/rclone_copy/
+
+    #     if not any(check in d for d in os.listdir(local_dir)):
+    #         raise Exception(f"Folder with {filetype} wasn't copied to '{local_dir}', due to "
+    #                         f" missing {filetype} path files in '{remote_dir}'!")
+
+    #     logger.info(f"The remote {filetype} folder '{remote_dir}' was copied to '{local_dir}'")
+
+    # else:
+    #     logger.info(f"Skipping download of '{remote_dir}' as the "
+    #                 f"folder with {filetype} already exists in '{local_dir}'!")
 
     return local_dir
 
@@ -360,21 +387,26 @@ def check_node_disk_limit(limit_gb: int = configs.LIMIT_GB):
         limit_gb: user defined disk space limit (in GB)
     
     Returns:
-        available GB on node
+        limit (gb) that should not be exceeded by this deployment, taking into account the overall available node space
     """
     try:
         # get available space on entire node
         available_gb = int(subprocess.getoutput("df -h | grep 'overlay' | awk '{print $4}'").split("G")[0])
+        available_gb = max(available_gb - 3, 0)     # adding some buffer
     except ValueError as e:
-        logger.info(f"ValueError: Node disk space not readable. Using provided limit of {limit_gb} GB.")
-        available_gb = limit_gb
+        logger.error(f"ValueError: Node disk space not readable. Using provided limit of {limit_gb} GB.")
+        raise HTTPException(reason=str(e)) from e
 
-    if available_gb >= limit_gb:
+    current_gb = round(get_disk_usage() / (1024 ** 3), 2)
+    leftover_gb = round(limit_gb - current_gb, 2)
+    if leftover_gb < available_gb:
         return limit_gb
     else:
-        logger.warning(f"Available disk space on node ({available_gb} GB) is less than the user "
-                       f"defined limit ({limit_gb} GB). Limit will be reduced to {available_gb} GB.")
-        return available_gb
+        new_limit_gb = round(current_gb + available_gb, 2)
+        logger.warning(f"Available disk space on node ({available_gb} GB) is less than the leftover deployment "
+                       f"space ({leftover_gb} GB) until the user-defined limit ({limit_gb} GB) is reached. "
+                       f"Limit will be reduced to {new_limit_gb} GB.")
+        return new_limit_gb
 
 
 def get_disk_usage(folder: Path = configs.BASE_PATH):

@@ -68,6 +68,9 @@ try:  # Path for remotely downloaded sub/models and ckp_pretrain_pth
 except KeyError as err:
     raise RuntimeError("Undefined configuration for remote path") from err
 
+SUBMODULE_PATH = os.getenv("SUBMODULE_PATH", default=Path(BASE_PATH, settings['model']['name']))
+SUBMODULE_CONFIGS_PATH = os.getenv("SUBMODULE_CONFIGS_PATH", default=Path(SUBMODULE_PATH, "configs", "mmdet"))
+
 try:  # Get model backbones
     BACKBONES = os.getenv("BACKBONES", default=settings['backbones']['names'])
     if isinstance(BACKBONES, str):
@@ -82,3 +85,5 @@ try:  # Define node space limits
                                   default=int(settings['local']['data_limit_gb']))
 except Exception as err:
     raise RuntimeError("Undefined configuration for disk memory space") from err
+
+ARCHITECTURES = os.getenv("ARCHITECTURES", default=settings['model']['architectures'])
