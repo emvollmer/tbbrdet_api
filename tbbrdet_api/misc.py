@@ -19,17 +19,19 @@ import re
 import sys
 import shutil
 
-from aiohttp.web import HTTPBadRequest, HTTPException
+from aiohttp.web import HTTPBadRequest, HTTPException, HTTPServerError
 
 from tbbrdet_api import configs
 
 logger = logging.getLogger('__name__')
 logger.setLevel(logging.DEBUG)
 
+stop_thread = threading.Event()
 
 class DiskSpaceExceeded(Exception):
     """Raised when disk space is exceeded."""
     pass
+
 
 def _catch_error(f):
     """
@@ -100,7 +102,8 @@ def extract_zst():
         tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
                        str(zst_path), "-C", str(configs.DATA_PATH)]
         
-        run_subprocess(tar_command, process_message=f"unpacking '{zst_path.name}'", limit_gb=configs.DATA_LIMIT_GB)
+        run_subprocess(tar_command, process_message=f"unpacking '{zst_path.name}'", 
+                       limit_gb=configs.DATA_LIMIT_GB, path_to_check=configs.DATA_PATH)
 
 
 def launch_cmd(logdir, port):
@@ -192,7 +195,6 @@ def get_model_paths(paths: list, pretrain: bool = False):
 def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
     """
     Downloads the remote folder from nextcloud to a specified checkpoint path.
-    todo: Remove this function and just use copy_rclone instead!!!
 
     Args:
         remote_dir (str): The path to the model / weights folder in NextCloud
@@ -236,72 +238,40 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
         # If the error was caused because the source wasn't a directory
         print('Directory not copied because remote source directory not a directory. Error: %s' % e)
     except FileNotFoundError as e:
-        print('Error in copying from {remote_dir} to {local_dir. Error: %s' % e)
-
-    # if folder_to_copy not in local_model_dir.iterdir() or not any(check in d for d in os.listdir(local_dir)):
-    #     print(f'Downloading the {filetype} checkpoints from Nextcloud')     # logger.info
-    #     print(f'Remote_dir: {remote_dir}\nDestination_dir: {local_dir}')
-
-    #     shutil.copytree(remote_dir, local_dir)
-    #     # copy_rclone(frompath=remote_dir, topath=local_dir)
-    #     # todo: ensure this works as planned, because in EGI tut
-    #     #  remote_folder=/../predict_model_dir, local_folder=configs.MODEL_PATH (no
-    #     #  predict_model_dir) and rclone doesn't copy the src folder!
-    #     #  https://rclone.org/commands/rclone_copy/
-
-    #     if not any(check in d for d in os.listdir(local_dir)):
-    #         raise Exception(f"Folder with {filetype} wasn't copied to '{local_dir}', due to "
-    #                         f" missing {filetype} path files in '{remote_dir}'!")
-
-    #     logger.info(f"The remote {filetype} folder '{remote_dir}' was copied to '{local_dir}'")
-
-    # else:
-    #     logger.info(f"Skipping download of '{remote_dir}' as the "
-    #                 f"folder with {filetype} already exists in '{local_dir}'!")
+        print(f'Error in copying from {remote_dir} to {local_dir}. Error: %s' % e)
 
     return local_dir
 
 
-def copy_rclone(frompath: Path, topath: Path, timeout=600):
+def copy_file(frompath: Path, topath: Path):
     """
-    Function to download a directory/file using rclone.
-    NOTE: This will only work if we're copying to a local directory.
+    Copy a file (also to / from remote directory)
+
     Args:
-        frompath (Path): Path from which will be downloaded f.e. remote path.
-        topath (Path): Folder to which downloaded paths with be saved f.e. local path.
-        timeout (int): Time limit by which process should be completed
-
-    Returns:
-        None
+        frompath (Path): The path to the file to be copied
+        topath (Path): The path to the destination folder directory
+    
+    Raises:
+        OSError: If the source isn't a directory
+        FileNotFoundError: If the source file doesn't exist
     """
-    # check if the frompath is a folder or file, if it's a folder get filenames from within
-    if not frompath.suffix:
-        if "rshare" in str(frompath):
-            file_names = [Path(p).name for p in ls_remote(frompath)]
-        else:
-            file_names = [p.name for p in frompath.iterdir()]
+    frompath: Path = Path(frompath)
+    topath: Path = Path(topath)
+
+    if Path(topath, frompath.name).exists():
+        print(f"Skipping copy of '{frompath}' as the file already exists in '{topath}'!")   # logger.info
     else:
-        file_names = [frompath.name]
-
-    # check if folder/file to be copied already exists in destination directory (topath)
-    if file_names and not set(file_names).issubset(os.listdir(topath)):
-        logger.info(f"Copying '{frompath}' to '{topath}'...")  
-        command = ['rclone', 'copy', str(frompath), str(topath)]
-        run_subprocess(command, process_message="copying with rclone")
-
-        # check if folder/file now exists in destination directory (topath)
-        if not set(file_names).issubset(os.listdir(topath)):
-            logger.error(f"An error must have occured during copying, as "
-                         f"no file(s) '{file_names}' exist(s) in '{topath}'!")
-            raise
-
-        logger.info(f"'{file_names}' was/were successfully copied to '{topath}'!")
-    else:
-        logger.warning(f"Skipping download of '{frompath}' as the "
-                       f"file(s) '{file_names}' already exist(s) in '{topath}'!")
+        try:
+            print(f"Copying '{frompath}' to '{topath}'...") # logger.info
+            topath = shutil.copy(frompath, topath)
+        except OSError as e:
+            print(f'Directory not copied because {frompath} directory not a directory. Error: %s' % e)
+        except FileNotFoundError as e:
+            print(f'Error in copying from {frompath} to {topath}. Error: %s' % e)
 
 
-def run_subprocess(command: list, process_message: str, limit_gb: int = configs.LIMIT_GB, timeout: int = 500):
+def run_subprocess(command: list, process_message: str, limit_gb: int = configs.LIMIT_GB, 
+                   path_to_check: Path = configs.BASE_PATH, timeout: int = 500):
     """
     Function to run a subprocess command.
 
@@ -317,50 +287,67 @@ def run_subprocess(command: list, process_message: str, limit_gb: int = configs.
         Exception: If any other error occured
     """
     log_disk_usage(f"Begin: {process_message}")
-    # get absolute limit by comparing to remaining available space on node
-    limit_gb = check_node_disk_limit(limit_gb)
+    str_command = " ".join(command)
 
-    if get_disk_usage() / (1024 ** 3) > limit_gb:
-        raise DiskSpaceExceeded(f"Disk space limit of {str(limit_gb)} GB already exceeded!")
-        log_disk_usage(f"Failed: {process_message}")
+    # get absolute limit by comparing to remaining available space on node
+    limit_gb = check_available_node_space(limit_gb)
+
+    if get_disk_usage(folder=path_to_check) > limit_gb:
+        log_disk_usage(f"FAILED: {process_message}")
+        logger.error(f"Disk space limit of {limit_gb} GB exceeded before {process_message} subprocess can start!")
+        raise DiskSpaceExceeded(f"Disk space limit of {limit_gb} GB exceeded "
+                                f"before {process_message} subprocess can start!")
         return
 
     try:
         # monitor disk space usage in the background
         monitor_thread = threading.Thread(target=monitor_disk_space,
-                                          args=(limit_gb,), daemon=True)
+                                          args=(limit_gb, path_to_check, ), daemon=True)
         monitor_thread.start()
-        print(f"Running subprocess command: {command}")    # logger.debug
-        with subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,  # Capture stdout
-            stderr=subprocess.PIPE,  # Capture stderr
-            universal_newlines=True,  # Return strings rather than bytes
-        ) as process:
-            try:
-                outs, errs = process.communicate(None, timeout)
-                if errs:
-                    raise Exception(errs)
-            except TimeoutExpired as exc:
-                process.kill()
-                logger.error(f"Timeout while {process_message}: %s", exc, exc_info=True)
-                raise HTTPException(reason=exc) from exc
-            except Exception as exc:  # pylint: disable=broad-except
-                process.kill()
-                logger.error(f"Error while {process_message}: %s", exc, exc_info=True)
-                raise HTTPException(reason=exc) from exc
+        print(f"=================================\n"
+              f"Running {process_message} command:\n'{str_command}'\n"
+              f"=================================")    # logger.info
+
+        process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,  # Capture stdout
+                stderr=subprocess.PIPE,  # Capture stderr
+                universal_newlines=True,  # Return strings rather than bytes
+        )
+        return_code = process.wait(timeout=timeout)
+
+        if stop_thread.is_set():
+            log_disk_usage(f"FAILED: {process_message}")
+            raise DiskSpaceExceeded(f"Disk space exceeded during {process_message} "
+                                    f"while running\n'{str_command}'\n")
+
+        if return_code == 0:
+            log_disk_usage(f"Finished: {process_message}")
+        else:
+            _, err = process.communicate()
+            print(f"Error while running '{str_command}' for {process_message}. "
+                  f"Terminated with return code {return_code}.")    # logger.error
+            process.terminate()
+            raise HTTPException(reason=err) # here it works for some reason without TypeError??...
+
+    except TimeoutExpired:
+        process.terminate()
+        logger.error(f"Timeout during {process_message} while running\n'{str_command}'\n"
+                     f"{timeout} seconds were exceeded.")
+        raise
+        # NOTE: can't do "raise HTTPServerError(reason=f"Timeout during {process_message}. 
+        # {timeout} seconds were exceeded.")" because it causes a TypeError: __init__ required ...
 
     except DiskSpaceExceeded as e:
-        logger.error(f"Disk space exceeded while {process_message}: %s", e, exc_info=True)
-        print(f"Disk space limit exceeded: {str(e)}")    # logger.error
-        # NOTE: This doesn't prevent the program from continuing to run!!!
+        process.terminate()
+        logger.error(str(e))
         raise
+        # NOTE: can't do "raise HTTPServerError(reason=str(e))" because it causes a TypeError: __init__ required ..
 
-    log_disk_usage(f"Finished: {process_message}")
     return
 
 
-def monitor_disk_space(limit_gb: int = configs.LIMIT_GB):
+def monitor_disk_space(limit_gb: int, path_to_check: Path):
     """
     Thread function to monitor disk space and check the current usage doesn't exceed 
     the defined limit.
@@ -368,18 +355,18 @@ def monitor_disk_space(limit_gb: int = configs.LIMIT_GB):
     Raises:
         DiskSpaceExceeded: If available disk space was exceeded during threading.
     """
-    limit_bytes = limit_gb * (1024 ** 3)  # convert to bytes
+
     while True:
         time.sleep(3)
 
-        stored_bytes = get_disk_usage()
+        stored_gb = get_disk_usage(Path(path_to_check))
 
-        if stored_bytes >= limit_bytes:
-            raise DiskSpaceExceeded(f"Exceeded maximum allowed disk space of {limit_gb} GB "
-                                    f"for '{configs.BASE_PATH}' folder.")
+        if stored_gb >= limit_gb:
+            stop_thread.set()
+            sys.exit()
 
 
-def check_node_disk_limit(limit_gb: int = configs.LIMIT_GB):
+def check_available_node_space(limit_gb: int = configs.LIMIT_GB):
     """
     Check overall data limit on node and redefine limit if necessary.
 
@@ -390,35 +377,35 @@ def check_node_disk_limit(limit_gb: int = configs.LIMIT_GB):
         limit (gb) that should not be exceeded by this deployment, taking into account the overall available node space
     """
     try:
-        # get available space on entire node
+        # get available space on entire node (with additional buffer of 3 GB)
         available_gb = int(subprocess.getoutput("df -h | grep 'overlay' | awk '{print $4}'").split("G")[0])
-        available_gb = max(available_gb - 3, 0)     # adding some buffer
+        available_gb = max(available_gb - 3, 0)
     except ValueError as e:
         logger.error(f"ValueError: Node disk space not readable. Using provided limit of {limit_gb} GB.")
         raise HTTPException(reason=str(e)) from e
 
-    current_gb = round(get_disk_usage() / (1024 ** 3), 2)
+    current_gb = get_disk_usage()
     leftover_gb = round(limit_gb - current_gb, 2)
     if leftover_gb < available_gb:
         return limit_gb
     else:
         new_limit_gb = round(current_gb + available_gb, 2)
-        logger.warning(f"Available disk space on node ({available_gb} GB) is less than the leftover deployment "
-                       f"space ({leftover_gb} GB) until the user-defined limit ({limit_gb} GB) is reached. "
-                       f"Limit will be reduced to {new_limit_gb} GB.")
+        print(f"Available disk space on node ({available_gb} GB) is less than the leftover deployment "
+              f"space ({leftover_gb} GB) until the user-defined limit ({limit_gb} GB) is reached. "
+              f"Limit will be reduced to {new_limit_gb} GB.")       # logger.warning()
         return new_limit_gb
 
 
 def get_disk_usage(folder: Path = configs.BASE_PATH):
-    """Get the current amount of bytes stored in the provided folder.
+    """Get the current amount of GB (rounded to two decimals) stored in the provided folder.
     """
-    return sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
+    return round(sum(f.stat().st_size for f in folder.rglob('*') if f.is_file()) / (1024 ** 3), 2)
 
 
 def log_disk_usage(process_message: str):
     """Log used disk space to the terminal with a process_message describing what has occurred.
     """
-    print(f"{process_message}: Repository currently takes up {round(get_disk_usage() / (1024 ** 3), 2)} GB.")   # logger.info(...)
+    print(f"{process_message} --- Repository currently takes up {get_disk_usage()} GB.")   # logger.info(...)
 
 
 def check_train_from(directory):
@@ -429,7 +416,6 @@ def check_train_from(directory):
 
     Returns:
         val (str): Either "mask_rcnn_swin-t_coco-pretrained" or "mask_rcnn_swin-t_scratch"
-
     """
     for val in configs.settings['train_from'].values():
         if val in directory:

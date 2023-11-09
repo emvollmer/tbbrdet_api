@@ -30,10 +30,7 @@ import torch
 import logging
 from pathlib import Path
 import yaml
-# --------------------------------------
-# from TBBRDet.scripts.mmdet import (
-#     train, numpy_loader, common_vars
-# )
+
 from tbbrdet_api import configs
 from tbbrdet_api.misc import (
     set_log, get_pth_to_resume_from, run_subprocess
@@ -110,8 +107,7 @@ def main(args):
     for k, v in args.items():
         print(f"\t'{k}': {v}")
 
-    # call on TBBRDet training scripts
-    # note: this may have to be done via subprocess, probably won't work by external function call
+    # call on TBBRDet training script
     cfg_options_str = ' '.join([f"'{key}'={value}" for key, value in args['cfg_options'].items()])
     train_cmd = list(filter(None, [
         "/bin/bash", str(Path(configs.API_PATH, 'scripts', 'execute_train_evaluate.sh')),
@@ -122,12 +118,9 @@ def main(args):
         "--cfg-options", cfg_options_str,
         "--eval", args['eval']
     ]))
-    print(f"====================\n"
-          f"Training with train_cmd:\n{train_cmd}\n"
-          f"=====================")
 
-    run_subprocess(command=train_cmd, process_message="training", timeout=10000)
-    # logger.info(f'Model and logs were saved to {args["model_dir"]}')
+    run_subprocess(command=train_cmd, process_message="training", limit_gb=configs.LIMIT_GB, timeout=10000)
+    return
 
 
 def yaml_save(file_path=None, data={}):

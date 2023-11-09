@@ -111,13 +111,13 @@ class TrainArgsSchema(Schema):
         }
     )
 
-    # @validates_schema
-    # def validate_required_fields(self, data):
-    #     if 'ckp_resume_dir' in data and 'ckp_pretrain_pth' in data:
-    #         raise ValidationError('Only either a model ckp_pretrain_pth path OR a checkpoint path '
-    #                               'can be used at once.')
-    #     if data['device'] is False:
-    #         raise ValidationError('Training requires a GPU. Please obtain one before continuing.')
+    @validates_schema
+    def validate_required_fields(self, data):
+        if 'ckp_resume_dir' in data and 'ckp_pretrain_pth' in data:
+            raise ValidationError('Only either a model ckp_pretrain_pth path OR a checkpoint path '
+                                  'can be used at once.')
+        if data['device'] is False:
+            raise ValidationError('Training requires a GPU. Please obtain one before continuing.')
 
 
 class PredictArgsSchema(Schema):

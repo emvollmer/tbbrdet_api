@@ -33,12 +33,12 @@ from pathlib import Path
 # from tqdm import tqdm
 import pkg_resources
 
-from tbbrdet_api import configs, fields, misc   # replaced configs folder with config file
+from tbbrdet_api import configs, fields, misc
 from tbbrdet_api.scripts.train import main
 from tbbrdet_api.scripts.infer import infer
 from tbbrdet_api.misc import (
     _catch_error, extract_zst,
-    copy_rclone, download_folder_from_nextcloud,
+    download_folder_from_nextcloud, copy_file,
     check_train_from, get_pth_to_resume_from
 )
 
@@ -115,16 +115,15 @@ def train(**args):
     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
                     f"downloading data from '{configs.REMOTE_DATA_PATH}'...")
-        # copy_rclone(frompath=configs.REMOTE_DATA_PATH, topath=configs.DATA_PATH)
 
         logger.info("Extracting data from any .tar.zst files...")
         extract_zst()
 
         for json_path in Path("/storage/tbbrdet/datasets").glob("*.json"):
             if "100-104" in json_path.name:
-                shutil.copy(json_path, Path(configs.DATA_PATH, "train"))
+                copy_file(json_path, Path(configs.DATA_PATH, "train"))
             elif "105" in json_path.name:
-                shutil.copy(json_path, Path(configs.DATA_PATH, "test"))
+                copy_file(json_path, Path(configs.DATA_PATH, "test"))
             else:
                 logger.warning(f"Annotation file {json_path} neither the train nor test file. Not copying.")
 
@@ -164,7 +163,8 @@ def train(**args):
 
     main(args)
 
-    return {f'Model and logs were saved to {args["model_dir"]}'}
+    print(f"Model and logs were saved to {args['model_dir']}")
+    return {'result': f'Model and logs were saved to {args["model_dir"]}'}
 
 
 # def train_new(**args):
