@@ -225,7 +225,9 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
         if (not local_dir.is_dir()) or (local_dir.is_dir() and not any(check in d for d in os.listdir(local_dir))):
             print(f'Downloading the {filetype} checkpoints from Nextcloud')     # logger.info
 
-            shutil.rmtree(local_dir)
+            # remove existing tree, but only if it's present
+            if local_dir.is_dir():
+                shutil.rmtree(local_dir)
             shutil.copytree(remote_dir, local_dir)
 
             if not any(check in d for d in os.listdir(local_dir)):
@@ -235,8 +237,7 @@ def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
             logger.info(f"Skipping download of '{remote_dir}' as the "
                         f"folder with {filetype} already exists in '{local_dir}'!")
     except OSError as e:
-        # If the error was caused because the source wasn't a directory
-        print('Directory not copied because remote source directory not a directory. Error: %s' % e)
+        print('Directory not copied because source or destination is not a directory. Error: %s' % e)
     except FileNotFoundError as e:
         print(f'Error in copying from {remote_dir} to {local_dir}. Error: %s' % e)
 
