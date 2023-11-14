@@ -218,7 +218,12 @@ def train(**args):
 
 def predict(**args):
     """
-    Performs inference  on an input image.
+    Performs inference on an input image.
+
+    To change later with new train:
+    - configs.settings: change definition of remote "rshare:" to "/storage/"
+    -> remove "replace" methods here
+
     Args:
         **args:   keyword arguments from get_predict_args.
     Returns:
@@ -228,7 +233,7 @@ def predict(**args):
 
     # define model-related paths
     try:
-        model_dir = Path(args['predict_model_dir'])
+        model_dir = Path(args['predict_model_dir'].replace("rshare:", "/storage/"))
         args['config_file'] = str(sorted(model_dir.glob("*.py"))[-1])
         args['checkpoint_file'] = str(sorted(model_dir.glob("best*.pth"))[-1])
     except IndexError as e:
@@ -239,8 +244,7 @@ def predict(**args):
     # define output directory
     if str(configs.REMOTE_MODEL_PATH) in args['predict_model_dir']:
         args['out_dir'] = Path(
-            args['predict_model_dir'].replace(str(configs.REMOTE_MODEL_PATH),
-                                              str(configs.MODEL_PATH)), "predictions"
+            args['predict_model_dir'].replace("rshare:", "/storage/"), "predictions"
         )
     else:
         args['out_dir'] = Path(Path(args['predict_model_dir']), "predictions")
