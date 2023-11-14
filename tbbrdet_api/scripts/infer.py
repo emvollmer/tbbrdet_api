@@ -9,6 +9,7 @@ Inference on provided data
 # imports
 from pathlib import Path
 import logging
+import shutil
 
 import tbbrdet_api.configs as configs
 from tbbrdet_api.misc import run_subprocess
@@ -26,9 +27,20 @@ def infer(args):
     Returns:
         result
     """
-    # check the user provided image path to make sure it's a numpy file or directory with numpy files
-    npy_paths = collect_image_paths(Path(args['input']))
+    # check the user provided image path to make sure it's a numpy file or directory with numpy files        
+    try:
+        # Input file is path or directory
+        npy_paths = collect_image_paths(Path(args['input']))
+    except TypeError:
+        # Input file is from a browsing webargs field
+        tmp_filepath = Path(args['input'].filename)
+        new_filepath = Path(configs.DATA_PATH, args['input'].original_filename)
+        shutil.copy(tmp_filepath, new_filepath)
+        npy_paths = [new_filepath]
+    except Exception:
+        raise HTTPException(reason=err) from err
 
+    print(f"Predicting on image(s):\n", npy_paths)
     print(f"Inference starting with the settings:")
     for k, v in args.items():
         print(f"\t'{k}': {v}")
@@ -52,9 +64,15 @@ def infer(args):
         run_subprocess(command=infer_cmd, process_message="inference", limit_gb=configs.LIMIT_GB,
                        timeout=10000)
 
-        result.append(f'Inference result was saved to {out_path}\n')
+        result.append(str(out_path))
+        print(f'Inference result was saved to {out_path}')
 
-    return {'result': result}
+    # delete temporary files if webargs browsing field was used
+    if 'new_filepath' in locals():
+        new_filepath.unlink()
+        tmp_filepath.unlink()
+
+    return result
 
 
 def collect_image_paths(input_path: Path):

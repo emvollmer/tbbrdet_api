@@ -31,6 +31,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 # from tqdm import tqdm
+from PIL import Image
 import pkg_resources
 
 from tbbrdet_api import configs, fields, misc
@@ -246,7 +247,12 @@ def predict(**args):
     args['out_dir'].mkdir(parents=True, exist_ok=True)
 
     result = infer(args)
-    return {'result': result}
+
+    if args['accept'] == 'application/json':
+        return {'result': f"Inference result(s) saved to {', '.join(result)}"}
+    elif args['accept'] == 'image/png':
+        # todo: Find alternative, can't handle PIL's Image (ValueError: Unsupported body type <class 'PIL.PngImagePlugin.PngImageFile'>)
+        return Image.open(result[0])
 
 
 if __name__ == '__main__':

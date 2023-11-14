@@ -147,11 +147,11 @@ class PredictArgsSchema(Schema):
     )
 
     colour_channel = fields.Str(
-        required=True,
+        load_default="both",
         metadata={
-            'enum': ["RGB", "Thermal"],
+            'enum': ["both", "RGB", "TIR"],
             'description': 'Image colour channels on which the predictions will be visualized / '
-                           'saved to. Choice of RGB or Thermal.'
+                           'saved to. Choice of RGB, TIR or both side by side.'
         }
     )
 
@@ -175,12 +175,12 @@ class PredictArgsSchema(Schema):
         load_default=False,
         metadata={
             'enum': [True, False],
-            'description': 'Visualize output only if this argument is passed.'
+            'description': 'Visualize output only if this argument is passed. Currently this is not being used!'
         }
     )
 
     accept = fields.Str(
-        load_default="application/pdf",
+        load_default='application/json',
         validate=validate.OneOf(['image/png', 'application/json']),
         metadata={
             'location': "headers",
