@@ -10,6 +10,7 @@ https://git.scc.kit.edu/m-team/ai/fasterrcnn_pytorch_api/-/blob/master/fasterrcn
 # imports
 import ast
 import configparser
+import logging
 import os
 from pathlib import Path
 import pathlib
@@ -87,3 +88,14 @@ except Exception as err:
     raise RuntimeError("Undefined configuration for disk memory space") from err
 
 ARCHITECTURES = os.getenv("ARCHITECTURES", default=settings['model']['architectures'])
+if isinstance(ARCHITECTURES, str):
+    ARCHITECTURES = ast.literal_eval(ARCHITECTURES)
+
+TRAIN_OPTIONS = os.getenv("TRAIN_OPTIONS", default=settings['training']['options'])
+if isinstance(TRAIN_OPTIONS, str):
+    TRAIN_OPTIONS = ast.literal_eval(TRAIN_OPTIONS)
+
+
+# configure logging:
+ENV_LOG_LEVEL = os.getenv("ENV_LOG_LEVEL", default=settings['logging']['log_level'])
+LOG_LEVEL = getattr(logging, ENV_LOG_LEVEL.upper())

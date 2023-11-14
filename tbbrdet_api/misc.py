@@ -1,7 +1,6 @@
 """
-This file gathers some functions that have proven to be useful
-across projects. They are not strictly need for integration
-but users might want nevertheless to take advantage from them.
+This file gathers some utility functions for all other scripts
+(get_metadata, training and inference).
 """
 
 from functools import wraps
@@ -24,7 +23,7 @@ from aiohttp.web import HTTPBadRequest, HTTPException, HTTPServerError
 from tbbrdet_api import configs
 
 logger = logging.getLogger('__name__')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(configs.LOG_LEVEL)      # previously: logging.DEBUG
 
 stop_thread = threading.Event()
 
@@ -71,7 +70,6 @@ def _fields_to_dict(fields_in):
 
 
 def set_log(log_dir):
-    # TODO: Add logger parameters to config and use those values for setLevel
     logging.basicConfig(
         # level=logging.DEBUG,
         format='%(message)s',
@@ -80,7 +78,7 @@ def set_log(log_dir):
         filemode='w'
     )
     console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
+    console.setLevel(configs.LOG_LEVEL)
     # add the handler to the root logger
     logging.getLogger().addHandler(console)
 
@@ -132,116 +130,33 @@ def launch_tensorboard(logdir, port=6006):
     p.start()
 
 
-def ls_local():
+def ls_folders(directory: Path = configs.MODEL_PATH, pattern: str = "*latest.pth") -> list:
     """
-    Utility to return a list of current models / ckp_pretrain_pth .pth files stored in the local folders
-    configured for cache.
+    Utility to return a list of folders in a given directory that contain a file of a specific pattern.
+
+    - local_model_folders = ls_folders(directory=configs.MODEL_PATH, pattern="*latest.pth")
+    - remote_model_folders = ls_folders(directory=configs.REMOTE_MODEL_PATH, pattern="*latest.pth")
+
+    Args:
+        directory (Path): Path of the directory to scan
+        pattern (str): The pattern to use for scanning
 
     Returns:
         list: list of relevant .pth file paths
     """
-    logger.debug("Scanning at: %s", configs.MODEL_PATH)
-    local_paths = Path(configs.MODEL_PATH).glob("**/*.pth")
-    # to include only the last 4 path elements, change to "str(Path(*entry.parts[-4:]))"
-    return [str(entry) for entry in local_paths
-            if any(w in str(entry) for w in ["best", "weight"])]
+    logger.debug(f"Scanning through '{directory}' with pattern '{pattern}'")
+    return sorted(set([str(d.parent) for d in Path(directory).rglob(pattern)]))
 
 
-def ls_remote(remote_directory: Path = configs.REMOTE_MODEL_PATH):
-    """
-    Utility to return a list of current models (.pth files)
-    stored in the remote folder.
-
-    Returns:
-        list: List of .pth files for models / checkpoint files within the remote directory
-    """
-    remote_directory = str(remote_directory)
-    # get recursive list of all files and folders in the remote directory path
-    command = ['rclone', 'lsf', remote_directory, "-R", "--absolute"]
-    result = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = result.communicate()
-
-    if result.returncode == 0:
-        directories = stdout.decode().splitlines()
-        if remote_directory == str(configs.REMOTE_MODEL_PATH):
-            model_paths = [remote_directory + d.rstrip("/") for d in directories
-                           if any(w in d for w in ["best", "weight"])
-                           if d.endswith(".pth")]
-            return model_paths
-        else:
-            return [remote_directory + d.rstrip("/") for d in directories]
-    else:
-        logger.error("Error executing rclone command:", stderr.decode())
-        return []
-
-
-def get_model_paths(paths: list, pretrain: bool = False):
-    """
-    Function to reduce list of paths to specific model checkpoints
-    Args:
-        paths (list): list of all paths
-        pretrain (bool): If True, filters .pth ckp files for officially pretrained model weights
-                        If False, filters .pth ckp files for other models, f.e. previously trained
-
-    Returns:
-        list: only folders that contain model checkpoint paths ("best...pth"/"latest.pth")
-    """
-    if pretrain:
-        return [d.rstrip("/") for d in paths if "weight" in d]
-    else:
-        return list(set([osp.dirname(d.rstrip("/")) for d in paths if "weight" not in d]))
-
-
-def download_folder_from_nextcloud(remote_dir, filetype, check=".pth"):
-    """
-    Downloads the remote folder from nextcloud to a specified checkpoint path.
+def get_weights_folder(data: dict):
+    """Utility to get folder containing pretrained weights to use in resumed training 
 
     Args:
-        remote_dir (str): The path to the model / weights folder in NextCloud
-        filetype (str): What is being copied (model, weights, data?)
-        check (str): String with which to check if correct files were downloaded
-
+        data (dict): Arguments from fields.py (user inputs in swagger ui)
     Returns:
-       local_model_dir (str): The path to the local folder to which the model was copied
-
-    Raises:
-       Exception: If no files were copied to the checkpoint directory
-                  after downloading the model from the URL.
-
+        Path to the folder containing pretrained weights
     """
-    remote_dir = remote_dir.replace("rshare:", "/storage/")
-    logger.debug(f"Scanning at: {remote_dir}")
-
-    # get local folder, which will include the "<model-name>_coco-pretrain" / _scratch folder
-    local_model_dir = Path(configs.MODEL_PATH, check_train_from(remote_dir))
-    local_model_dir.mkdir(parents=True, exist_ok=True)
-
-    folder_to_copy = Path(remote_dir).name
-    local_dir = Path(local_model_dir, folder_to_copy)
-
-    try:
-        print(f'Remote_dir: {remote_dir}\nDestination_dir: {local_dir}')
-        #if path already exists, remove it before copying with copytree()
-        if (not local_dir.is_dir()) or (local_dir.is_dir() and not any(check in d for d in os.listdir(local_dir))):
-            print(f'Downloading the {filetype} checkpoints from Nextcloud')     # logger.info
-
-            # remove existing tree, but only if it's present
-            if local_dir.is_dir():
-                shutil.rmtree(local_dir)
-            shutil.copytree(remote_dir, local_dir)
-
-            if not any(check in d for d in os.listdir(local_dir)):
-                raise FileNotFoundError(f"Folder with {filetype} wasn't copied to '{local_dir}', due to "
-                                        f" missing {filetype} path files in '{remote_dir}'!")
-        else:
-            logger.info(f"Skipping download of '{remote_dir}' as the "
-                        f"folder with {filetype} already exists in '{local_dir}'!")
-    except OSError as e:
-        print('Directory not copied because source or destination is not a directory. Error: %s' % e)
-    except FileNotFoundError as e:
-        print(f'Error in copying from {remote_dir} to {local_dir}. Error: %s' % e)
-
-    return local_dir
+    return Path(configs.REMOTE_MODEL_PATH, data['architecture'], data['train_from'], "pretrained_weights")
 
 
 def copy_file(frompath: Path, topath: Path):
@@ -407,47 +322,6 @@ def log_disk_usage(process_message: str):
     """Log used disk space to the terminal with a process_message describing what has occurred.
     """
     print(f"{process_message} --- Repository currently takes up {get_disk_usage()} GB.")   # logger.info(...)
-
-
-def check_train_from(directory):
-    """
-    Check if directory contains information on training from scratch or with coco ckp_pretrain_pth
-    Args:
-        directory (str): The path to be checked
-
-    Returns:
-        val (str): Either "mask_rcnn_swin-t_coco-pretrained" or "mask_rcnn_swin-t_scratch"
-    """
-    for val in configs.settings['train_from'].values():
-        if val in directory:
-            return val
-
-
-def get_pth_to_resume_from(directory, priority):
-    """
-    Define .pth file name from which to resume from.
-    Resuming is prioritized according to the "priority" list
-
-    Args:
-        directory (str): Directory to search through for .pth file names to be chosen from
-        priority (list): Strings to be matched in priority order, f.e. ['latest', 'best', 'epoch']
-
-    Returns:
-        pth_name (str/None): Selected path file name to resume from
-    """
-    pth_names = [i for i in os.listdir(directory) if i.endswith(".pth")]
-    # sort list of path names so that "epoch_X.pth" are in descending numerical order
-    sorted_pth_names = sorted(pth_names,
-                              key=lambda f: int(re.search(r'\d+', f).group())
-                              if re.search(r'\d+', f) else float('inf'), reverse=True)
-
-    # we prioritize resuming according to the provided priority and in descending order
-    for option in priority:
-        for pth in sorted_pth_names:
-            if option in pth:
-                return pth
-    # return none if none of the "priority" list strings were found at all
-    return None
 
 
 if __name__ == '__main__':

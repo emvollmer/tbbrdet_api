@@ -28,7 +28,8 @@ import os
 import os.path as osp
 import shutil
 import tempfile
-from datetime import datetime
+from torch import cuda
+# from datetime import datetime
 from pathlib import Path
 # from tqdm import tqdm
 from PIL import Image
@@ -39,8 +40,8 @@ from tbbrdet_api.scripts.train import main
 from tbbrdet_api.scripts.infer import infer
 from tbbrdet_api.misc import (
     _catch_error, extract_zst,
-    download_folder_from_nextcloud, copy_file,
-    check_train_from, get_pth_to_resume_from
+    copy_file,
+    ls_folders,   # download_folder_from_nextcloud, check_train_from
 )
 
 logger = logging.getLogger('__name__')
@@ -64,10 +65,10 @@ def get_metadata():
         'home_page': configs.API_METADATA.get("home_page"),
         'license': configs.API_METADATA.get("license"),
         'version': configs.API_METADATA.get("version"),
-        'datasets_local': [str(p) for p in configs.DATA_PATH.glob("[!.]*")],
-        'datasets_remote': [str(p) for p in Path("/storage/tbbrdet/datasets").glob("[!.]*")],
-        'checkpoint_files_local': misc.ls_local(),
-        'checkpoint_files_remote': misc.ls_remote(),
+        'datasets_local': ls_folders(configs.DATA_PATH, '*.npy'),
+        'datasets_remote': [str(p) for p in configs.REMOTE_DATA_PATH.glob("[!.]*")],
+        'model_folders_local': ls_folders(configs.MODEL_PATH),
+        'model_folders_remote': ls_folders(configs.REMOTE_MODEL_PATH),
     }
     logger.debug("Package model metadata: %s", metadata)
     return metadata
@@ -105,12 +106,17 @@ def get_predict_args():
 def train(**args):
     """
     Performs training on the dataset.
+
     Args:
         **args: keyword arguments from get_train_args.
     Returns:
         path to the trained model
     """
     print("Training with user provided arguments:\n", args)    # logger.info(...)
+
+    if not args['device'] or (args['device'] and not cuda.is_available()):
+        logger.error("Training requires a GPU. Please ensure a GPU is available before training.")
+        sys.exit(1)
 
     # if no data in local data folder, download it from Nextcloud
     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
@@ -120,7 +126,7 @@ def train(**args):
         logger.info("Extracting data from any .tar.zst files...")
         extract_zst()
 
-        for json_path in Path("/storage/tbbrdet/datasets").glob("*.json"):
+        for json_path in configs.REMOTE_DATA_PATH.glob("*.json"):
             if "100-104" in json_path.name:
                 copy_file(json_path, Path(configs.DATA_PATH, "train"))
             elif "105" in json_path.name:
@@ -128,101 +134,21 @@ def train(**args):
             else:
                 logger.warning(f"Annotation file {json_path} neither the train nor test file. Not copying.")
 
-    # define specifics of training (from scratch, pretrained, resume)
-    if args['ckp_resume_dir']:
-        # define whether we're resuming the training of a model from scratch or coco
-        args['train_from'] = check_train_from(args['ckp_resume_dir'])
+    # training config definitions
+    args['cfg_options'] = {'data_root': str(configs.DATA_PATH),
+                          'runner.max_epochs': args['epochs'],
+                          'data.samples_per_gpu': args['batch'],
+                          'data.workers_per_gpu': args['workers']
+                          }
 
-        # download model if necessary
-        if "rshare" in args['ckp_resume_dir']:
-            args['ckp_resume_dir'] = download_folder_from_nextcloud(
-                remote_dir=args['ckp_resume_dir'],
-                filetype="model", check="latest"
-            )
+    model_dir = main(args)
 
-    elif args['ckp_pretrain_pth']:
-        # define that we're training from coco
-        args['train_from'] = configs.settings['train_from']['coco']
-
-        # download model if necessary
-        if "rshare" in args['ckp_pretrain_pth']:
-            local_pretrain_ckp_folder = download_folder_from_nextcloud(
-                remote_dir=osp.dirname(args['ckp_pretrain_pth']),
-                filetype="pretrained weights"
-            )
-            args['ckp_pretrain_pth'] = osp.join(local_pretrain_ckp_folder,
-                                                osp.basename(args['ckp_pretrain_pth']))
-
-    else:  # neither resuming nor using pretrained weights means we're training from scratch
-        args['train_from'] = configs.settings['train_from']['scratch']
-
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-    model_dir = Path(configs.MODEL_PATH, args['train_from'], timestamp)
-    if not model_dir.is_dir():
-        model_dir.mkdir(parents=True, exist_ok=True)
-    args['model_dir'] = str(model_dir)
-
-    main(args)
-
-    print(f"Model and logs were saved to {args['model_dir']}")
-    return {'result': f'Model and logs were saved to {args["model_dir"]}'}
-
-
-# def train_new(**args):
-#     """
-#     Performs training on the dataset.
-
-#     TODO: Before usable, the following adjustments are necessary:
-#     - fields.TrainArgsSchema(): add field "architecture"
-#     - fields.TrainArgsSchema(): add field "train_from" with options: "scratch", "coco", model_folder (folders with "latest.pth" in them)
-#     - configs.settings: change definition of remote "rshare:" to "/storage/"
-
-#     Args:
-#         **args: keyword arguments from get_train_args.
-#     Returns:
-#         path to the trained model
-#     """
-#     print("Training with user provided arguments:\n", args)    # logger.info(...)
-
-#     if not args['device'] or (args['device'] and not torch.cuda.is_available()):
-#         logger.error("Training requires a GPU. Please ensure a GPU is available before training.")
-#         sys.exit(1)
-
-#     # if no data in local data folder, download it from Nextcloud
-#     if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
-#         logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
-#                     f"downloading data from '{configs.REMOTE_DATA_PATH}'...")
-
-#         logger.info("Extracting data from any .tar.zst files...")
-#         extract_zst()
-
-#         for json_path in configs.REMOTE_DATA_PATH.glob("*.json"):
-#             if "100-104" in json_path.name:
-#                 shutil.copy(json_path, Path(configs.DATA_PATH, "train"))
-#             elif "105" in json_path.name:
-#                 shutil.copy(json_path, Path(configs.DATA_PATH, "test"))
-#             else:
-#                 logger.warning(f"Annotation file {json_path} neither the train nor test file. Not copying.")
-
-#     # training config definitions
-#     args['cfg_options'] = {'data_root': str(configs.DATA_PATH),
-#                           'runner.max_epochs': args['epochs'],
-#                           'data.samples_per_gpu': args['batch'],
-#                           'data.workers_per_gpu': args['workers']
-#                           }
-
-#     main_new(args)
-
-#     return {f'Model and logs were saved to {args["model_dir"]}'}
+    return {f'Model and logs were saved to {model_dir}'}
 
 
 def predict(**args):
     """
     Performs inference on an input image.
-
-    To change later with new train:
-    - configs.settings: change definition of remote "rshare:" to "/storage/"
-    -> remove "replace" methods here
 
     Args:
         **args:   keyword arguments from get_predict_args.
@@ -233,7 +159,7 @@ def predict(**args):
 
     # define model-related paths
     try:
-        model_dir = Path(args['predict_model_dir'].replace("rshare:", "/storage/"))
+        model_dir = Path(args['predict_model_dir'])
         args['config_file'] = str(sorted(model_dir.glob("*.py"))[-1])
         args['checkpoint_file'] = str(sorted(model_dir.glob("best*.pth"))[-1])
     except IndexError as e:
@@ -241,13 +167,8 @@ def predict(**args):
                      f"Error: %s", e, exc_info=True)
         raise e
 
-    # define output directory
-    if str(configs.REMOTE_MODEL_PATH) in args['predict_model_dir']:
-        args['out_dir'] = Path(
-            args['predict_model_dir'].replace("rshare:", "/storage/"), "predictions"
-        )
-    else:
-        args['out_dir'] = Path(Path(args['predict_model_dir']), "predictions")
+    # define output directory regardless of whether it's remote or local
+    args['out_dir'] = Path(Path(args['predict_model_dir']), "predictions")
     args['out_dir'].mkdir(parents=True, exist_ok=True)
 
     result = infer(args)
@@ -261,17 +182,13 @@ def predict(**args):
 
 if __name__ == '__main__':
     ex_args = {
-        'model': 'mask_rcnn_swin-t',
-        'ckp_pretrain_pth': None,  # 'rshare:tbbrdet/models/mask_rcnn_swin-t_coco-pretrained/pretrained_weights/mask_rcnn_swin-t-p4-w7_fpn_fp16_ms-crop-3x_coco_20210908_165006-90a4008c.pth',
-        'ckp_resume_dir': None,
-        # 'data_config': 'test_data/submarin.yaml',
-        # 'use_train_aug': False,
+        'architecture': 'swin',
+        'train_from': '/storage/tbbrdet/models/swin/coco/2023-05-10_103541/',  # 'scratch',
         'device': True,
         'epochs': 1,
         'workers': 2,
         'batch': 1,
         'lr': 0.0001,
-        # 'imgsz': 640,
         'seed': 42,
         'eval': "bbox"
     }

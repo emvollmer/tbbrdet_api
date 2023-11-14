@@ -8,17 +8,17 @@ A platform user can enter information in fields that equate to the below options
 Based on: K Alibabaei's fasterrcnn_pytorch_api.git
 https://git.scc.kit.edu/m-team/ai/fasterrcnn_pytorch_api/-/blob/master/fasterrcnn_pytorch_api/fields.py
 """
+from pathlib import Path
 from webargs import fields, validate
 from marshmallow import Schema, fields, validates_schema, ValidationError
 from tbbrdet_api import configs
 from tbbrdet_api.misc import (
-    ls_remote, ls_local, get_model_paths
+    ls_folders, get_weights_folder
 )
-
 # --------------------------------------
 
-REMOTE_PTHS = ls_remote()
-LOCAL_PTHS = ls_local()
+# REMOTE_PTHS = ls_remote()
+# LOCAL_PTHS = ls_local()
 
 
 class TrainArgsSchema(Schema):
@@ -29,34 +29,29 @@ class TrainArgsSchema(Schema):
     class Meta:
         ordered = True
 
-    model = fields.Str(
+    # backbones = fields.Str(
+    #     required=True,
+    #     metadata={
+    #         'enum': configs.BACKBONES,      # currently resnet 50
+    #         "description": "Model backbone options."
+    #     }
+    # )
+
+    architecture = fields.Str(
+        load_default='swin',
+        validate=validate.OneOf(configs.ARCHITECTURES),
+        metadata={
+            'description': 'Model architecture options.'
+        }
+    )
+
+    train_from = fields.Str(
         required=True,
         metadata={
-            'enum': configs.BACKBONES,      # currently only Mask-RCNN resnet 50 FPN with swin-t
-            "description": "Model name."
-        }
-    )
-
-    ckp_pretrain_pth = fields.Str(
-        load_default=None,
-        metadata={
-            'enum': get_model_paths(LOCAL_PTHS, pretrain=True) +
-                    get_model_paths(REMOTE_PTHS, pretrain=True),
-            'description': 'If you want to train a new model with pretrained weights (transfer '
-                           'learning), choose a ckp_pretrain_pth file from the provided options. '
-                           'If only remote paths are available, the chosen one will be downloaded.'
-                           '\n NOTE: This is mutually exclusive with ckp_resume_dir!'
-        }
-    )
-
-    ckp_resume_dir = fields.Str(
-        load_default=None,
-        metadata={
-            'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
-            'description': 'If you want to resume training a model, choose a folder file from '
-                           'the provided options. If only remote paths are available, '
-                           'the chosen associated folder will be downloaded.'
-                           '\n NOTE: This is mutually exclusive with ckp_pretrain_pth!'
+            'enum': configs.TRAIN_OPTIONS + ls_folders(configs.MODEL_PATH) + ls_folders(configs.REMOTE_MODEL_PATH),
+            'description': 'Options for training model: from scratch, from pretrained weights '
+                           '(transfer learning), or resume the training of a previously trained '
+                           'model by selecting the appropriate (remote or local) model folder.'
         }
     )
 
@@ -110,6 +105,13 @@ class TrainArgsSchema(Schema):
                                   'can be used at once.')
         if data['device'] is False:
             raise ValidationError('Training requires a GPU. Please obtain one before continuing.')
+        
+        if data['train_from'] == 'coco':
+            # NOTE: this does not work!
+            if not get_weights_folder(data).is_dir():
+                raise ValidationError(f"No pretrained weights folder for {data['architecture']}. "
+                                      f"No training with {data['train_from']} weights with said architecture possible!"
+                                      f" Please select a different architecture.")
 
 
 class PredictArgsSchema(Schema):
@@ -132,7 +134,8 @@ class PredictArgsSchema(Schema):
     predict_model_dir = fields.Str(
         required=True,
         metadata={
-            'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
+            'enum': ls_folders(configs.MODEL_PATH, "best*.pth") + ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth"),
+            # 'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
             'description': 'Model to be used for prediction. If only remote folders '
                            'are available, the chosen one will be downloaded.'
         }
