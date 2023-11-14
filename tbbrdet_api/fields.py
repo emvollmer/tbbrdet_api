@@ -38,7 +38,6 @@ class TrainArgsSchema(Schema):
     )
 
     ckp_pretrain_pth = fields.Str(
-        required=False,
         load_default=None,
         metadata={
             'enum': get_model_paths(LOCAL_PTHS, pretrain=True) +
@@ -51,7 +50,6 @@ class TrainArgsSchema(Schema):
     )
 
     ckp_resume_dir = fields.Str(
-        required=False,
         load_default=None,
         metadata={
             'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
@@ -63,7 +61,6 @@ class TrainArgsSchema(Schema):
     )
 
     device = fields.Bool(
-        required=False,
         load_default=True,
         metadata={
             'enum': [True, False],
@@ -73,31 +70,26 @@ class TrainArgsSchema(Schema):
     )
 
     epochs = fields.Int(
-        required=False,
         load_default=4,
         metadata={'description': 'Number of epochs to train.'}
     )
 
     workers = fields.Int(
-        required=False,
         load_default=2,
         metadata={'description': 'Number of workers for data processing/transforms/augmentations.'}
     )
 
     batch = fields.Int(
-        required=False,
         load_default=1,
         metadata={'description': 'Batch size to load the data.'}
     )
 
     lr = fields.Float(
-        required=False,
         load_default=0.0001,
         metadata={'description': 'Learning rate.'}
     )
 
     seed = fields.Int(
-        required=False,
         load_default=1,
         metadata={'description': 'Global seed number for training.'}
     )
@@ -156,13 +148,11 @@ class PredictArgsSchema(Schema):
     )
 
     threshold = fields.Float(
-        required=False,
         load_default=0.5,
         metadata={'description': 'Detection threshold.'}
     )
 
     device = fields.Bool(
-        required=False,
         load_default=True,
         metadata={
             'enum': [True, False],
@@ -170,14 +160,13 @@ class PredictArgsSchema(Schema):
         }
     )
 
-    no_labels = fields.Bool(
-        required=False,
-        load_default=False,
-        metadata={
-            'enum': [True, False],
-            'description': 'Visualize output only if this argument is passed. Currently this is not being used!'
-        }
-    )
+    # no_labels = fields.Bool(
+    #     load_default=False,
+    #     metadata={
+    #         'enum': [True, False],
+    #         'description': 'Visualize output only if this argument is passed. Currently this is not being used!'
+    #     }
+    # )
 
     accept = fields.Str(
         load_default='application/json',

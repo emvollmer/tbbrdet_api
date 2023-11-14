@@ -283,7 +283,7 @@ if __name__ == '__main__':
         'colour_channel': 'both',
         'threshold': 0.3,
         'device': True,
-        'no_labels': False,
+        # 'no_labels': False,
         'accept': 'image/png'
     }
     predict(**ex_args)
