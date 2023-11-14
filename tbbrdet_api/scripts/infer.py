@@ -7,40 +7,18 @@ USAGE
 Inference on provided data
 """
 # imports
-import os
-import glob
+from pathlib import Path
+import logging
 
-from mmdet.apis import init_detector, inference_detector, show_result_pyplot
-import mmcv
-import torch
+import tbbrdet_api.configs as configs
+from tbbrdet_api.misc import run_subprocess
 # --------------------------------------
-
-# todo: check if function actually necessary? Doesn't seem to be used in EGI tut scripts
-def collect_all_images(dir_test):
-    """
-    Function to return a list of image paths.
-
-    :param dir_test: Directory containing images or single image path.
-
-    Returns:
-        test_images: List containing all image paths.
-    """
-    test_images = []
-    if os.path.isdir(dir_test):
-        image_file_types = ['*.npy']
-        for file_type in image_file_types:
-            test_images.extend(glob.glob(f"{dir_test}/{file_type}"))
-    else:
-        test_images.append(dir_test)
-    return test_images
+logger = logging.getLogger('__name__')
 
 
 def infer(args):
     """
-    First code outline based on MMDetection JupyterNotebook Demo
-    https://github.com/open-mmlab/mmdetection/blob/v2.21.0/demo/inference_demo.ipynb
-    and EGI conference tutorial:
-    https://git.scc.kit.edu/m-team/ai/fasterrcnn_pytorch_api/-/blob/master/fasterrcnn_pytorch_api/scripts/inference.py
+    Implement inference depending on what arguments the user provided.
 
     Args:
         args: Arguments from fields.py (user inputs in swagger ui)
@@ -48,33 +26,61 @@ def infer(args):
     Returns:
         result
     """
+    # check the user provided image path to make sure it's a numpy file or directory with numpy files
+    npy_paths = collect_image_paths(Path(args['input']))
 
-    # config_file = '../configs/faster_rcnn/faster_rcnn_r50_fpn_1x_coco.py'
-    try:
-        checkpoint_file = sorted(args['predict_model_dir'].glob("best*.pth"))[-1]
-        config_file = sorted(args['predict_model_dir'].glob("*.py"))[-1]
-    except IndexError as e:
-        logger.error(f"No checkpoint or config file found in {args['predict_model_dir']}! Error: %s", err, exc_info=True)
-        raise e
+    print(f"Inference starting with the settings:")
+    for k, v in args.items():
+        print(f"\t'{k}': {v}")
 
-    if args['device'] and torch.cuda.is_available():
-        DEVICE = torch.device('cuda:0')
+    # infer on image(s)
+    result = []
+    for npy_path in npy_paths:
+        out_path = Path(args['out_dir'], npy_path.parent.name,
+                        npy_path.stem + "_score" + str(args['threshold']) + ".png")
+
+        infer_cmd = list(filter(None, [
+            "/bin/bash", str(Path(configs.API_PATH, 'scripts', 'execute_inference.sh')),
+            "--input", str(npy_path),
+            "--config-file", args['config_file'],
+            "--ckp-file", args['checkpoint_file'],
+            "--score-threshold", str(args['threshold']),
+            "--channel", args['colour_channel'],
+            # "--out-dir", str(out_path)
+        ]))
+
+        run_subprocess(command=infer_cmd, process_message="inference", limit_gb=configs.LIMIT_GB,
+                       timeout=10000)
+
+        result.append(f'Inference result was saved to {out_path}\n')
+
+    return {'result': result}
+
+
+def collect_image_paths(input_path: Path):
+    """
+    Function to return a list of image paths with a .npy suffix.
+
+    Args:
+        input_path: Directory containing images or a single image path.
+
+    Returns:
+        img_paths: List containing all image paths.
+    """
+    suffix = ".npy"
+
+    if input_path.is_dir():
+        img_paths = input_path.rglob(f"*{suffix}")
+        if not img_paths:
+            raise ValueError(f"{input_path} is not a directory containing {suffix} files!")
+
+    elif input_path.is_file():
+        if input_path.suffix != suffix:
+            raise ValueError(f"{input_path} is not a {suffix} file!")
+
+        img_paths = [input_path]
+
     else:
-        DEVICE = torch.device('cpu')
+        raise ValueError(f"{input_path} does not exist / is no viable directory.")
 
-    # build the model from a config file and a checkpoint file
-    model = init_detector(config_file, checkpoint_file, device=DEVICE)
-
-    test_images = args['input']
-    print(f"Test instances: {len(test_images)}")
-    # test a single image
-    img = 'demo.jpg'
-
-    # here we have to reduce npy to specific channels depending on user choice!
-    # RGB or thermal (3x grayscale channel)
-    result = inference_detector(model, img)
-
-    # show the results
-    show_result_pyplot(model, img, result)
-
-    return result
+    return img_paths

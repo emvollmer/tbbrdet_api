@@ -224,32 +224,35 @@ def predict(**args):
         either a json file or png image with bounding box
     """
     print("Predicting with user provided arguments:\n", args)    # logger.info(...)
-    # if the selected model is from the remote repository, download it
 
-    if "rshare" in args['predict_model_dir']:
-        args['predict_model_dir'] = download_folder_from_nextcloud(
-            remote_dir=args['predict_model_dir'], filetype="model", check="best"
+    # define model-related paths
+    try:
+        model_dir = Path(args['predict_model_dir'])
+        args['config_file'] = str(sorted(model_dir.glob("*.py"))[-1])
+        args['checkpoint_file'] = str(sorted(model_dir.glob("best*.pth"))[-1])
+    except IndexError as e:
+        logger.error(f"No checkpoint or config file found in {args['predict_model_dir']}!"
+                     f"Error: %s", e, exc_info=True)
+        raise e
+
+    # define output directory
+    if str(configs.REMOTE_MODEL_PATH) in args['predict_model_dir']:
+        args['out_dir'] = Path(
+            args['predict_model_dir'].replace(str(configs.REMOTE_MODEL_PATH),
+                                              str(configs.MODEL_PATH)), "predictions"
         )
-    args['model_pth'] = get_pth_to_resume_from(directory=args['predict_model_dir'],
-                                               priority=['best', 'latest', 'epoch'])
-    assert args['model_pth'], f"No '.pth' files in {args['predict_model_dir']} to predict with!"
+    else:
+        args['out_dir'] = Path(Path(args['predict_model_dir']), "predictions")
+    args['out_dir'].mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for f in [args['input']]:
-            shutil.copy(f.filename, tmpdir + F'/{f.original_filename}')
-        args['input'] = [osp.join(tmpdir, t) for t in os.listdir(tmpdir)]
-        outputs, buffer = infer.main(args)
-
-        if args['accept'] == 'image/png':
-            return buffer
-        else:
-            return outputs
+    result = infer(args)
+    return {'result': result}
 
 
 if __name__ == '__main__':
     ex_args = {
         'model': 'mask_rcnn_swin-t',
-        'ckp_pretrain_pth': None,
+        'ckp_pretrain_pth': None,  # 'rshare:tbbrdet/models/mask_rcnn_swin-t_coco-pretrained/pretrained_weights/mask_rcnn_swin-t-p4-w7_fpn_fp16_ms-crop-3x_coco_20210908_165006-90a4008c.pth',
         'ckp_resume_dir': None,
         # 'data_config': 'test_data/submarin.yaml',
         # 'use_train_aug': False,
@@ -264,22 +267,14 @@ if __name__ == '__main__':
     }
     train(**ex_args)
 
-# def warm():
-#     pass
-#
-#
-# def get_predict_args():
-#     return {}
-#
-#
-# @_catch_error
-# def predict(**kwargs):
-#     return None
-#
-#
-# def get_train_args():
-#     return {}
-#
-#
-# def train(**kwargs):
-#     return None
+    ex_args = {
+        'input': '/srv/tbbrdet_api/data/test/images/Flug1_105Media/DJI_0004_R.npy',
+        'predict_model_dir': '/srv/tbbrdet_api/models/mask_rcnn_swin-t_coco-pretrained/2023-11-14_085259/',
+        'colour_channel': 'both',
+        'threshold': 0.3,
+        'device': True,
+        'no_labels': False,
+        'accept': 'image/png'
+    }
+    predict(**ex_args)
+
