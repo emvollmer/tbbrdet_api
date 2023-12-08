@@ -83,7 +83,7 @@ def set_log(log_dir):
     logging.getLogger().addHandler(console)
 
 
-def extract_zst(zst_folder: str = configs.REMOTE_DATA_PATH):
+def extract_zst(zst_folder: str = configs.DATA_PATH):
     """
     Extracting the files from the tar.zst files
 
@@ -105,6 +105,7 @@ def extract_zst(zst_folder: str = configs.REMOTE_DATA_PATH):
 
         # check if this .tar.zst file is in the config.DATA_PATH, if so delete it to save space
         if configs.DATA_PATH in zst_path.parents:
+            logger.info(f"Removing .tar.zst file '{zst_path.name}' after extraction to save storage space.")
             zst_path.unlink()
 
 

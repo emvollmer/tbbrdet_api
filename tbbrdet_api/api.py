@@ -29,9 +29,7 @@ import os.path as osp
 import shutil
 import tempfile
 from torch import cuda
-# from datetime import datetime
 from pathlib import Path
-# from tqdm import tqdm
 from PIL import Image
 import pkg_resources
 
@@ -41,7 +39,7 @@ from tbbrdet_api.scripts.infer import infer
 from tbbrdet_api.misc import (
     _catch_error, extract_zst,
     copy_file,
-    ls_folders,   # download_folder_from_nextcloud, check_train_from
+    ls_folders,
 )
 
 logger = logging.getLogger('__name__')
@@ -132,7 +130,7 @@ def train(**args):
         logger.info(f"Provided dataset_path '{args['dataset_path']}' contains .tar.zst files to extract, "
                     f"extracting them into '{configs.DATA_PATH}'...")
         # handle zipped image numpy files through extraction
-        extract_zst(configs.DATA_PATH)
+        extract_zst(Path(args['dataset_path']))
 
         # handle annotation files through moving to destination directory
         for json_path in json_paths:

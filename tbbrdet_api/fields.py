@@ -40,7 +40,7 @@ class TrainArgsSchema(Schema):
         metadata={
             "description": "Path to the dataset. If none is provided, the local "
                            f"'{configs.DATA_PATH}' folder will be searched.\n"
-                           f"If connected, you can also use the remote folder '{configs.REMOTE_MODEL_PATH}'.",
+                           f"If connected, you can also use the remote folder '{configs.REMOTE_DATA_PATH}'.",
         },
         required=False,
         load_default=configs.DATA_PATH
