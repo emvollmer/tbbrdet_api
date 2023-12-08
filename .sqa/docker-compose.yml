@@ -8,20 +8,20 @@ services:
         target: /srv
     command: sleep infinity
 
-  uc-emvollmer-deep-oc-tbbrdet_api-cpu
-     build:
+  uc-emvollmer-deep-oc-tbbrdet_api-cpu:
+      build:
         context: "."
         dockerfile: "./docker/Dockerfile"
         args:
           tag: "base"
           branch: ${GIT_BRANCH}
-     image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${CPU_TAG}"
+      image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${CPU_TAG}"
 
-  uc-emvollmer-deep-oc-tbbrdet_api-gpu
-     build:
+  uc-emvollmer-deep-oc-tbbrdet_api-gpu:
+      build:
         context: "."
         dockerfile: "./docker/Dockerfile"
         args:
           tag: "base"
           branch: ${GIT_BRANCH}
-     image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${GPU_TAG}"
+      image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${GPU_TAG}"
