@@ -1,0 +1,43 @@
+# .sqa/config.yml - jenkins-pipeline-library configuration file
+
+# generic configuration: workspace, agents
+config:
+  credentials:
+    - id: indigobot
+      username_var: JPL_DOCKERUSER
+      password_var: JPL_DOCKERPASS
+
+environment:
+  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api-cpu"
+  JPL_DOCKERFORCEBUILD: "True"
+  LANG: C.UTF-8
+
+sqa_criteria:
+  qc_style:
+    repos:
+      tbbrdet_api:
+        container: tbbrdet-testing
+        tox:
+          tox_file: tox.ini
+          testenv:
+            - qc.sty
+
+  qc_coverage:
+    repos:
+      tbbrdet_api:
+        container: tbbrdet-testing
+        tox:
+          tox_file: tox.ini
+          testenv:
+            - qc.cov
+
+  qc_security:
+    repos:
+      tbbrdet_api:
+        container: tbbrdet-testing
+        tox:
+          tox_file: tox.ini
+          testenv:
+            - qc.sec
+
+timeout: 1200
