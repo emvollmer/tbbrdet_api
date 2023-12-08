@@ -83,12 +83,12 @@ def set_log(log_dir):
     logging.getLogger().addHandler(console)
 
 
-def extract_zst():
+def extract_zst(zst_folder: str = configs.REMOTE_DATA_PATH):
     """
     Extracting the files from the tar.zst files
 
     Args:
-        file_path (Path): Path to .zst file to extract
+        zst_folder (Path): Path to folder containing .tar.zst files to extract
 
     Returns:
         limit_exceeded (Bool): Turns true if no more data is allowed to be extracted
@@ -96,12 +96,16 @@ def extract_zst():
     """
     log_disk_usage("Begin extracting .tar.zst files")
     
-    for zst_path in Path("/storage/tbbrdet/datasets").glob("**/*.tar.zst"):
+    for zst_path in Path(zst_folder).glob("**/*.tar.zst"):
         tar_command = ["tar", "-I", "zstd", "-xf",      # add a -v flag to -xf if you want the filenames
                        str(zst_path), "-C", str(configs.DATA_PATH)]
         
         run_subprocess(tar_command, process_message=f"unpacking '{zst_path.name}'", 
                        limit_gb=configs.DATA_LIMIT_GB, path_to_check=configs.DATA_PATH)
+
+        # check if this .tar.zst file is in the config.DATA_PATH, if so delete it to save space
+        if configs.DATA_PATH in zst_path.parents:
+            zst_path.unlink()
 
 
 def launch_cmd(logdir, port):

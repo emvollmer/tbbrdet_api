@@ -36,6 +36,15 @@ class TrainArgsSchema(Schema):
     #         "description": "Model backbone options."
     #     }
     # )
+    dataset_path = fields.String(
+        metadata={
+            "description": "Path to the dataset. If none is provided, the local "
+                           f"'{configs.DATA_PATH}' folder will be searched.\n"
+                           f"If connected, you can also use the remote folder '{configs.REMOTE_MODEL_PATH}'.",
+        },
+        required=False,
+        load_default=configs.DATA_PATH
+    )
 
     architecture = fields.Str(
         load_default='swin',
@@ -100,10 +109,8 @@ class TrainArgsSchema(Schema):
 
     @validates_schema
     def validate_required_fields(self, data):
-        if 'ckp_resume_dir' in data and 'ckp_pretrain_pth' in data:
-            raise ValidationError('Only either a model ckp_pretrain_pth path OR a checkpoint path '
-                                  'can be used at once.')
         if data['device'] is False:
+            # NOTE: this does not work!
             raise ValidationError('Training requires a GPU. Please obtain one before continuing.')
         
         if data['train_from'] == 'coco':
@@ -132,12 +139,15 @@ class PredictArgsSchema(Schema):
     )
 
     predict_model_dir = fields.Str(
-        required=True,
+        load_default='/srv/tbbrdet_api/models/swin/coco/2023-12-07_130038',
         metadata={
-            'enum': ls_folders(configs.MODEL_PATH, "best*.pth") + ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth"),
-            # 'enum': get_model_paths(LOCAL_PTHS) + get_model_paths(REMOTE_PTHS),
+            # 'enum': ls_folders(configs.MODEL_PATH, "best*.pth") + ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth"),
             'description': 'Model to be used for prediction. If only remote folders '
-                           'are available, the chosen one will be downloaded.'
+                           'are available, the chosen one will be used and predictions saved remotely.\n\n'
+                           'Currently existing "best" model paths are locally:\n'
+                           f'{ls_folders(configs.MODEL_PATH, "best*.pth")}\n'
+                           'and remotely:\n'
+                           f'{ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth")}\n'
         }
     )
 
@@ -173,7 +183,7 @@ class PredictArgsSchema(Schema):
 
     accept = fields.Str(
         load_default='application/json',
-        validate=validate.OneOf(['image/png', 'application/json']),
+        validate=validate.OneOf(['application/json']),     # NOTE: can't hanlde 'image/png' at the moment
         metadata={
             'location': "headers",
             'description': "Define the type of output to get back. Returns png file with "

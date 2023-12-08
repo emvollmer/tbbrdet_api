@@ -67,8 +67,10 @@ def get_metadata():
         'version': configs.API_METADATA.get("version"),
         'datasets_local': ls_folders(configs.DATA_PATH, '*.npy'),
         'datasets_remote': [str(p) for p in configs.REMOTE_DATA_PATH.glob("[!.]*")],
-        'model_folders_local': ls_folders(configs.MODEL_PATH),
-        'model_folders_remote': ls_folders(configs.REMOTE_MODEL_PATH),
+        'model_folders_for-resuming-training_local': ls_folders(configs.MODEL_PATH),
+        'model_folders_for-resuming-training_remote': ls_folders(configs.REMOTE_MODEL_PATH),
+        'model_folders_for-inference_local': ls_folders(configs.MODEL_PATH, "best*.pth"),
+        'model_folders_for-inference_remote': ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth"),
     }
     logger.debug("Package model metadata: %s", metadata)
     return metadata
@@ -116,23 +118,46 @@ def train(**args):
 
     if not args['device'] or (args['device'] and not cuda.is_available()):
         logger.error("Training requires a GPU. Please ensure a GPU is available before training.")
-        sys.exit(1)
+        raise ValueError("Training requires a GPU. Please ensure a GPU is available before training.")
 
-    # if no data in local data folder, download it from Nextcloud
-    if not all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]):
-        logger.info(f"Data folder '{configs.DATA_PATH}' empty, "
-                    f"downloading data from '{configs.REMOTE_DATA_PATH}'...")
+    if not Path(args['dataset_path']).is_dir():
+        logger.error(f"Provided dataset_path '{args['dataset_path']}' does not exist as a folder containing files.")
+        raise ValueError(f"Provided dataset_path '{args['dataset_path']}' does not exist as a folder containing files.")
 
-        logger.info("Extracting data from any .tar.zst files...")
-        extract_zst()
+    # check if provided dataset_path contains .tar.zst files to extract
+    tar_zst_paths = sorted(Path(args['dataset_path']).rglob("*.tar.zst"))
+    json_paths = sorted(Path(args['dataset_path']).glob("*.json"))
 
-        for json_path in configs.REMOTE_DATA_PATH.glob("*.json"):
+    if tar_zst_paths and json_paths:
+        logger.info(f"Provided dataset_path '{args['dataset_path']}' contains .tar.zst files to extract, "
+                    f"extracting them into '{configs.DATA_PATH}'...")
+        # handle zipped image numpy files through extraction
+        extract_zst(configs.DATA_PATH)
+
+        # handle annotation files through moving to destination directory
+        for json_path in json_paths:
             if "100-104" in json_path.name:
                 copy_file(json_path, Path(configs.DATA_PATH, "train"))
             elif "105" in json_path.name:
                 copy_file(json_path, Path(configs.DATA_PATH, "test"))
             else:
                 logger.warning(f"Annotation file {json_path} neither the train nor test file. Not copying.")
+
+        # delete duplicates in DATA_PATH folder
+        if Path(args['dataset_path']) == configs.DATA_PATH:
+            for json_path in json_paths:
+                json_path.unlink()
+
+    elif (all(folder in os.listdir(configs.DATA_PATH) for folder in ["train", "test"]) and \
+        list(configs.DATA_PATH.rglob("*.json")) and list(configs.DATA_PATH.rglob("*.npy"))):
+
+        logger.info(f"Data folder '{configs.DATA_PATH}' already contains required data structure "
+                    f"with .npy and .json files, so no additional extracting is necessary.")
+    
+    else:
+        logger.error(f"Provided dataset_path '{args['dataset_path']}' does not contain any files to download.")
+        raise FileNotFoundError(f"Provided dataset_path '{args['dataset_path']}' does not contain "
+                                f"any .tar.zst files to download and no unpacked files already exist.")
 
     # training config definitions
     args['cfg_options'] = {'data_root': str(configs.DATA_PATH),
@@ -175,13 +200,16 @@ def predict(**args):
 
     if args['accept'] == 'application/json':
         return {'result': f"Inference result(s) saved to {', '.join(result)}"}
-    elif args['accept'] == 'image/png':
-        # todo: Find alternative, can't handle PIL's Image (ValueError: Unsupported body type <class 'PIL.PngImagePlugin.PngImageFile'>)
-        return Image.open(result[0])
+    else:
+        raise ValueError(f"Accept type '{args['accept']}' is not supported.")
+    # elif args['accept'] == 'image/png':
+    #     # NOTE: Find alternative, can't handle PIL's Image (ValueError: Unsupported body type <class 'PIL.PngImagePlugin.PngImageFile'>)
+    #     return Image.open(result[0])
 
 
 if __name__ == '__main__':
     ex_args = {
+        'dataset_path': '/srv/tbbrdet_api/data/',
         'architecture': 'swin',
         'train_from': '/storage/tbbrdet/models/swin/coco/2023-05-10_103541/',  # 'scratch',
         'device': True,
