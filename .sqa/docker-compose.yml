@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   tbbrdet_api-testing:
-    image: vykozlov/uc-emvollmer-deep-oc-tbbrdet_api:base
+    image: deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cicd
     working_dir: /srv
     volumes:
       - type: bind
@@ -16,8 +16,8 @@ services:
       dockerfile: "./docker/Dockerfile"
       args:
         tag: "base"
-        branch: "test"
-    image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cpu"
+        branch: ${GIT_BRANCH}
+    image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${CPU_TAG}"
 
   tbbrdet_api-gpu:
     build:
