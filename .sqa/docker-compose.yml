@@ -2,12 +2,13 @@ version: "3.7"
 
 services:
   tbbrdet_api-testing:
-    image: deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cicd
-    working_dir: /srv
+    image: deephdc/cicd-uc-emvollmer-tbbrdet_api
+    # working_dir should be the same as the target directory
+    working_dir: /srv/tbbrdet_api
     volumes:
       - type: bind
         source: ./
-        target: /srv
+        target: /srv/tbbrdet_api
     command: sleep infinity
 
   tbbrdet_api-cpu:

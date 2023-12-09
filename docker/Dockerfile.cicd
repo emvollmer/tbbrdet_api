@@ -1,5 +1,4 @@
-# Dockerfile may have following Arguments:
-# tag - tag for the Base image, (e.g. 2.9.1 for tensorflow)
+# CI/CD image for the TBBRDet Model
 #
 # To build the image:
 # $ docker build -t <dockerhub_user>/<dockerhub_repo> --build-arg arg=value .
@@ -9,10 +8,8 @@
 # [!] Note: For the Jenkins CI/CD pipeline, input args are defined inside the
 # Jenkinsfile, not here!
 
-ARG tag=base
-
 # Base image
-FROM deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${tag}
+FROM deephdc/uc-emvollmer-deep-oc-tbbrdet_api:base
 
 LABEL maintainer='Elena Vollmer'
 LABEL version='0.0.1'
@@ -28,11 +25,11 @@ RUN apt-get update && \
 # Set LANG environment
 ENV LANG C.UTF-8
 
-# Set the working directory
-WORKDIR /srv
-
 # install python tools necessary for code testing
-RUN pip3 install --no-cache-dir tox flake8 pylint pydocstyle bandit sphinx
+RUN pip3 install --no-cache-dir tox flake8 pylint pydocstyle pep8 bandit sphinx
+# otherwise issues with twine<=1.10.0
+RUN pip3 install --no-cache-dir twine==1.11.0
+RUN pip3 install --no-cache-dir -U wheel setuptools
 
 # Install rclone (need to communicate with remote storages)
 RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb && \
@@ -44,5 +41,8 @@ RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb && \
     rm -rf /var/lib/apt/lists/*
 
 ENV RCLONE_CONFIG=/srv/.rclone/rclone.conf
+
+# Set the working directory
+WORKDIR /srv
 
 CMD ["tail","-f","/dev/null"]

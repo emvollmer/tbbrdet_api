@@ -113,7 +113,7 @@ def launch_cmd(logdir, port):
     subprocess.call(["tensorboard",
                      "--logdir", f"{logdir}",
                      "--port", f"{port}",
-                     "--host", "0.0.0.0"])
+                     "--host", "0.0.0.0"]) # nosec B603, B607
 
 
 def launch_tensorboard(logdir, port=6006):
