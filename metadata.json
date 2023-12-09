@@ -74,7 +74,7 @@
     "date_creation": "2023-02-07",
     "dataset_url": "https://zenodo.org/records/4767772",
     "sources": {
-		"dockerfile_repo": "https://github.com/emvollmer/DEEP-OC-tbbrdet_api",
+		"dockerfile_repo": "https://github.com/emvollmer/tbbrdet_api/docker",
 		"docker_registry_repo": "deephdc/uc-emvollmer-deep-oc-tbbrdet_api",
 		"code": "https://github.com/emvollmer/tbbrdet_api"
 	},
