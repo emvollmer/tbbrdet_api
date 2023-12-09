@@ -8,7 +8,7 @@ config:
       password_var: JPL_DOCKERPASS
 
 environment:
-#  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api"
+  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cpu"
   JPL_DOCKERFORCEBUILD: "True"
   LANG: C.UTF-8
 

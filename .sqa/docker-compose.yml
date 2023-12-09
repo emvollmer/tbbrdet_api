@@ -1,6 +1,8 @@
+version: "3.7"
+
 services:
   tbbrdet_api-testing:
-    image: deephdc/uc-emvollmer-deep-oc-tbbrdet_api:base
+    image: vykozlov/uc-emvollmer-deep-oc-tbbrdet_api:base
     working_dir: /srv
     volumes:
       - type: bind
