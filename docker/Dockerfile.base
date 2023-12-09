@@ -1,0 +1,85 @@
+# Dockerfile for the "base" docker image for the TBBRDet App
+# Dockerfile may have following Arguments:
+# tag - tag for the Base image, (e.g. 2.9.1 for tensorflow)
+#
+# To build the image:
+# $ docker build -t <dockerhub_user>/<dockerhub_repo> --build-arg arg=value -f Dockerfile.base .
+# or using default args:
+# $ docker build -t <dockerhub_user>/<dockerhub_repo> -f Dockerfile.base .
+#
+# [!] Note: For the Jenkins CI/CD pipeline, input args are defined inside the
+# Jenkinsfile, not here!
+
+ARG tag=20.04
+
+# Base image, e.g. tensorflow/tensorflow:2.9.1
+FROM ubuntu:${tag}
+
+LABEL maintainer='Elena Vollmer'
+LABEL version='0.0.1'
+# Deepaas API for TBBRDet Model
+
+# Install Ubuntu packages
+# - gcc is needed in Pytorch images because deepaas installation might break otherwise (see docs) (it is already installed in tensorflow images)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        apt-utils \
+        gnupg \
+        lsb-release \
+        software-properties-common \
+        ca-certificates \
+        gcc \
+        git \
+        curl \
+        nano \
+        wget \
+        zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+# install cuda
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin && \
+    mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600 && \
+    apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub   && \
+    add-apt-repository "deb http://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /" && \
+    apt-get update && \
+    apt-get install -y cuda-toolkit-11-6 \
+    libcudnn8=8.4.0.27-1+cuda11.6 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64"
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+
+# Set LANG environment
+ENV LANG C.UTF-8
+
+# Set the working directory
+WORKDIR /srv
+
+# install python 3.6
+# create virtualenv in /srv/venv
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.6 python3.6-dev python3.6-venv && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.6 1 && \
+    update-alternatives --set python /usr/bin/python3.6 && \
+    cd /srv && python3.6 -m venv venv && \
+    rm -rf /var/lib/apt/lists/*
+
+# activate virtualenv by placing /srv/venv/bin first in PATH
+ENV PATH="/srv/venv/bin:${PATH}"
+
+# update pip, setuptools, wheel
+# install opencv-python (3.4.18.65 is installed without wheel build), pytorch, mmdet
+RUN pip3 install pip==21.3.1 setuptools==59.6.0 wheel==0.37.1 && \
+    pip3 install --no-cache-dir \
+        opencv-python==3.4.18.65 \
+        torch==1.8.0+cu111 \
+        torchvision==0.9.0+cu111 \
+        torchaudio==0.8.0 \
+        -f https://download.pytorch.org/whl/torch_stable.html && \
+    pip3 install openmim && \
+    # Use mim to install mmcv:
+    mim install mmcv-full==1.5 && \
+    # Install correct mmdetection version
+    pip3 install --no-cache-dir mmdet==2.21.0

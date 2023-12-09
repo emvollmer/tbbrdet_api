@@ -1,0 +1,15 @@
+# .sqa/config.yml - jenkins-pipeline-library configuration file
+
+# generic configuration: workspace, agents
+config:
+  credentials:
+    - id: indigobot
+      username_var: JPL_DOCKERUSER
+      password_var: JPL_DOCKERPASS
+
+environment:
+  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:gpu"
+  JPL_DOCKERFORCEBUILD: "True"
+  LANG: C.UTF-8
+
+timeout: 1200

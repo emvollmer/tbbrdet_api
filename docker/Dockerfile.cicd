@@ -1,0 +1,48 @@
+# CI/CD image for the TBBRDet Model
+#
+# To build the image:
+# $ docker build -t <dockerhub_user>/<dockerhub_repo> --build-arg arg=value .
+# or using default args:
+# $ docker build -t <dockerhub_user>/<dockerhub_repo> .
+#
+# [!] Note: For the Jenkins CI/CD pipeline, input args are defined inside the
+# Jenkinsfile, not here!
+
+# Base image
+FROM deephdc/uc-emvollmer-deep-oc-tbbrdet_api:base
+
+LABEL maintainer='Elena Vollmer'
+LABEL version='0.0.1'
+# CI/CD image for the TBBRDet Model
+
+# Install Ubuntu packages
+RUN apt-get update && \
+# Clean up
+    apt-get autoremove -y && \
+    apt-get clean -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set LANG environment
+ENV LANG C.UTF-8
+
+# install python tools necessary for code testing
+RUN pip3 install --no-cache-dir tox flake8 pylint pydocstyle pep8 bandit sphinx
+# otherwise issues with twine<=1.10.0
+RUN pip3 install --no-cache-dir twine==1.11.0
+RUN pip3 install --no-cache-dir -U wheel setuptools
+
+# Install rclone (need to communicate with remote storages)
+RUN curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb && \
+    dpkg -i rclone-current-linux-amd64.deb && \
+    apt install -f && \
+    mkdir /srv/.rclone/ && \
+    touch /srv/.rclone/rclone.conf && \
+    rm rclone-current-linux-amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV RCLONE_CONFIG=/srv/.rclone/rclone.conf
+
+# Set the working directory
+WORKDIR /srv
+
+CMD ["tail","-f","/dev/null"]
