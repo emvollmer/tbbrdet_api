@@ -1,5 +1,5 @@
 services:
-  tbbrdet-testing:
+  tbbrdet_api-testing:
     image: deephdc/uc-emvollmer-deep-oc-tbbrdet_api:base
     working_dir: /srv
     volumes:
@@ -10,18 +10,18 @@ services:
 
   tbbrdet_api-cpu:
     build:
-        context: "."
-        dockerfile: "./docker/Dockerfile"
-        args:
-          tag: "base"
-          branch: ${GIT_BRANCH}
-    image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${CPU_TAG}"
+      context: "."
+      dockerfile: "./docker/Dockerfile"
+      args:
+        tag: "base"
+        branch: "test"
+    image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cpu"
 
   tbbrdet_api-gpu:
     build:
-        context: "."
-        dockerfile: "./docker/Dockerfile"
-        args:
-          tag: "base"
-          branch: ${GIT_BRANCH}
+      context: "."
+      dockerfile: "./docker/Dockerfile"
+      args:
+        tag: "base"
+        branch: ${GIT_BRANCH}
     image: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:${GPU_TAG}"

@@ -8,7 +8,7 @@ config:
       password_var: JPL_DOCKERPASS
 
 environment:
-  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api-cpu"
+#  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api"
   JPL_DOCKERFORCEBUILD: "True"
   LANG: C.UTF-8
 
@@ -16,7 +16,7 @@ sqa_criteria:
   qc_style:
     repos:
       tbbrdet_api:
-        container: tbbrdet-testing
+        container: tbbrdet_api-testing
         tox:
           tox_file: tox.ini
           testenv:
@@ -25,7 +25,7 @@ sqa_criteria:
   qc_coverage:
     repos:
       tbbrdet_api:
-        container: tbbrdet-testing
+        container: tbbrdet_api-testing
         tox:
           tox_file: tox.ini
           testenv:
@@ -34,7 +34,7 @@ sqa_criteria:
   qc_security:
     repos:
       tbbrdet_api:
-        container: tbbrdet-testing
+        container: tbbrdet_api-testing
         tox:
           tox_file: tox.ini
           testenv:
