@@ -12,6 +12,9 @@ pipeline {
         stage('SQA baseline dynamic stages') {
             steps {
                 script {
+                    echo env.CPU_TAG
+                    echo env.GPU_TAG
+                    echo "${env.GIT_BRANCH}"
                     projectConfig = pipelineConfig()
                     buildStages(projectConfig)
                 }
