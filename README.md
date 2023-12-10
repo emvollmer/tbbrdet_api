@@ -1,9 +1,9 @@
 # tbbrdet_api
-[![Build Status](https://jenkins.indigo-datacloud.eu/buildStatus/icon?job=Pipeline-as-code/DEEP-OC-org/UC-emvollmer-tbbrdet_api/master)](https://jenkins.indigo-datacloud.eu/job/Pipeline-as-code/job/DEEP-OC-org/job/UC-emvollmer-tbbrdet_api/job/master)
+[![Build Status](https://jenkins.services.ai4os.eu/buildStatus/icon?job=AI4OS-HUB-TEST%2Ftbbrdet_api%2Fmaster)](https://jenkins.services.ai4os.eu/job/AI4OS-HUB-TEST/job/tbbrdet_api/job/master/)
 
-Deepaas API for TBBRDet Model
+DEEPaaS API for TBBRDet Model
 
-To launch it, first install the package via the provided bash scripts, then run [deepaas](https://github.com/indigo-dc/DEEPaaS):
+To launch it, first install the package via the provided bash scripts, then run [deepaas](https://github.com/ai4os/DEEPaaS):
 ```bash
 wget https://raw.githubusercontent.com/emvollmer/tbbrdet_api/master/deployment_setup.sh
 source deployment_setup.sh 	# this sets up the deployment (CUDA, CUDNN, Python3.6)
