@@ -7,6 +7,7 @@ USAGE
 Inference on provided data
 """
 # imports
+from aiohttp.web import HTTPError
 from pathlib import Path
 import logging
 import shutil
@@ -27,7 +28,7 @@ def infer(args):
     Returns:
         result
     """
-    # check the user provided image path to make sure it's a numpy file or directory with numpy files        
+    # ensure user provided image path is a numpy file or directory with npys
     try:
         # Input file is path or directory
         npy_paths = collect_image_paths(Path(args['input']))
@@ -37,22 +38,23 @@ def infer(args):
         new_filepath = Path(configs.DATA_PATH, args['input'].original_filename)
         shutil.copy(tmp_filepath, new_filepath)
         npy_paths = [new_filepath]
-    except Exception:
-        raise HTTPException(reason=err) from err
+    except Exception as e:
+        raise HTTPError(e)
 
-    print(f"Predicting on image(s):\n", npy_paths)
-    print(f"Inference starting with the settings:")
+    print("Predicting on image(s):\n", npy_paths)
+    print("Inference starting with the settings:")
     for k, v in args.items():
         print(f"\t'{k}': {v}")
 
     # infer on image(s)
     result = []
     for npy_path in npy_paths:
-        out_path = Path(args['out_dir'], npy_path.parent.name,
-                        npy_path.stem + "_score" + str(args['threshold']) + ".png")
+        out_name = npy_path.stem + "_score" + str(args['threshold']) + ".png"
+        out_path = Path(args['out_dir'], npy_path.parent.name, out_name)
 
         infer_cmd = list(filter(None, [
-            "/bin/bash", str(Path(configs.API_PATH, 'scripts', 'execute_inference.sh')),
+            "/bin/bash", str(Path(configs.API_PATH, 'scripts',
+                                  'execute_inference.sh')),
             "--input", str(npy_path),
             "--config-file", args['config_file'],
             "--ckp-file", args['checkpoint_file'],
@@ -61,7 +63,8 @@ def infer(args):
             # "--out-dir", str(out_path)
         ]))
 
-        run_subprocess(command=infer_cmd, process_message="inference", limit_gb=configs.LIMIT_GB,
+        run_subprocess(command=infer_cmd, process_message="inference",
+                       limit_gb=configs.LIMIT_GB,
                        timeout=10000)
 
         result.append(str(out_path))
@@ -90,7 +93,8 @@ def collect_image_paths(input_path: Path):
     if input_path.is_dir():
         img_paths = input_path.rglob(f"*{suffix}")
         if not img_paths:
-            raise ValueError(f"{input_path} is not a directory containing {suffix} files!")
+            raise ValueError(f"{input_path} is not a directory "
+                             f"containing {suffix} files!")
 
     elif input_path.is_file():
         if input_path.suffix != suffix:
@@ -99,6 +103,7 @@ def collect_image_paths(input_path: Path):
         img_paths = [input_path]
 
     else:
-        raise ValueError(f"{input_path} does not exist / is no viable directory.")
+        raise ValueError(f"{input_path} does not exist "
+                         f"or isn't a viable directory.")
 
     return img_paths

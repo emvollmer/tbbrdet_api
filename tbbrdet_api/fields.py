@@ -3,22 +3,17 @@
 
 """
 Selectable options to train and test a model.
-A platform user can enter information in fields that equate to the below options.
+A platform user can enter information in fields as defined by these options.
 
 Based on: K Alibabaei's fasterrcnn_pytorch_api.git
 https://git.scc.kit.edu/m-team/ai/fasterrcnn_pytorch_api/-/blob/master/fasterrcnn_pytorch_api/fields.py
 """
-from pathlib import Path
-from webargs import fields, validate
+from webargs import validate
 from marshmallow import Schema, fields, validates_schema, ValidationError
 from tbbrdet_api import configs
 from tbbrdet_api.misc import (
     ls_folders, get_weights_folder
 )
-# --------------------------------------
-
-# REMOTE_PTHS = ls_remote()
-# LOCAL_PTHS = ls_local()
 
 
 class TrainArgsSchema(Schema):
@@ -38,9 +33,10 @@ class TrainArgsSchema(Schema):
     # )
     dataset_path = fields.String(
         metadata={
-            "description": "Path to the dataset. If none is provided, the local "
-                           f"'{configs.DATA_PATH}' folder will be searched.\n"
-                           f"If connected, you can also use the remote folder '{configs.REMOTE_DATA_PATH}'.",
+            "description": "Path to the dataset. If none is provided, "
+                           f"the local '{configs.DATA_PATH}' folder will be "
+                           "searched.\nIf connected, you can also use the "
+                           f"remote folder '{configs.REMOTE_DATA_PATH}'.",
         },
         required=False,
         load_default=configs.DATA_PATH
@@ -57,10 +53,14 @@ class TrainArgsSchema(Schema):
     train_from = fields.Str(
         required=True,
         metadata={
-            'enum': configs.TRAIN_OPTIONS + ls_folders(configs.MODEL_PATH) + ls_folders(configs.REMOTE_MODEL_PATH),
-            'description': 'Options for training model: from scratch, from pretrained weights '
-                           '(transfer learning), or resume the training of a previously trained '
-                           'model by selecting the appropriate (remote or local) model folder.'
+            'enum': (configs.TRAIN_OPTIONS
+                     + ls_folders(configs.MODEL_PATH)
+                     + ls_folders(configs.REMOTE_MODEL_PATH)),
+            'description': 'Options for training model: from scratch, '
+                           'from pretrained weights (transfer learning), or '
+                           'resume the training of a previously trained '
+                           'model by selecting the appropriate '
+                           '(remote or local) model folder.'
         }
     )
 
@@ -80,7 +80,8 @@ class TrainArgsSchema(Schema):
 
     workers = fields.Int(
         load_default=2,
-        metadata={'description': 'Number of workers for data processing/transforms/augmentations.'}
+        metadata={
+            'description': 'Number of workers for data processing / training.'}
     )
 
     batch = fields.Int(
@@ -102,8 +103,9 @@ class TrainArgsSchema(Schema):
         load_default="bbox",
         metadata={
             'enum': ["bbox", "segm"],
-            'description': "Evaluate performance according to bounding box (object detection model)"
-                           " or segmented area (instance segmentation model)"
+            'description': "Evaluate performance according to bounding box "
+                           "(object detection model) "
+                           "or segmented area (instance segmentation model)"
         }
     )
 
@@ -111,14 +113,19 @@ class TrainArgsSchema(Schema):
     def validate_required_fields(self, data):
         if data['device'] is False:
             # NOTE: this does not work!
-            raise ValidationError('Training requires a GPU. Please obtain one before continuing.')
-        
+            raise ValidationError(
+                'Training requires a GPU. Please obtain one before continuing.'
+            )
+
         if data['train_from'] == 'coco':
             # NOTE: this does not work!
             if not get_weights_folder(data).is_dir():
-                raise ValidationError(f"No pretrained weights folder for {data['architecture']}. "
-                                      f"No training with {data['train_from']} weights with said architecture possible!"
-                                      f" Please select a different architecture.")
+                raise ValidationError(
+                    f"No pretrained weights folder for {data['architecture']}."
+                    f" No training with {data['train_from']} weights with this"
+                    f" architecture possible!"
+                    f" Please select a different architecture."
+                )
 
 
 class PredictArgsSchema(Schema):
@@ -141,13 +148,16 @@ class PredictArgsSchema(Schema):
     predict_model_dir = fields.Str(
         load_default='/srv/tbbrdet_api/models/swin/coco/2023-12-07_130038',
         metadata={
-            # 'enum': ls_folders(configs.MODEL_PATH, "best*.pth") + ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth"),
-            'description': 'Model to be used for prediction. If only remote folders '
-                           'are available, the chosen one will be used and predictions saved remotely.\n\n'
-                           'Currently existing "best" model paths are locally:\n'
-                           f'{ls_folders(configs.MODEL_PATH, "best*.pth")}\n'
-                           'and remotely:\n'
-                           f'{ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth")}\n'
+            # 'enum': ls_folders(configs.MODEL_PATH, "best*.pth") +
+            #         ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth"),
+            'description':
+                'Model to be used for prediction. If only remote folders are '
+                'available, the chosen one will be used and predictions saved '
+                'remotely.\n\nCurrently existing "best" model paths are'
+                '\n- locally:\n'
+                f'{ls_folders(configs.MODEL_PATH, "best*.pth")}'
+                '\n- remotely:\n'
+                f'{ls_folders(configs.REMOTE_MODEL_PATH, "best*.pth")}\n'
         }
     )
 
@@ -155,8 +165,9 @@ class PredictArgsSchema(Schema):
         load_default="both",
         metadata={
             'enum': ["both", "RGB", "TIR"],
-            'description': 'Image colour channels on which the predictions will be visualized / '
-                           'saved to. Choice of RGB, TIR or both side by side.'
+            'description': 'Image colour channels on which the predictions '
+                           'will be visualized / saved to. '
+                           'Choice of RGB, TIR or both side by side.'
         }
     )
 
@@ -177,17 +188,20 @@ class PredictArgsSchema(Schema):
     #     load_default=False,
     #     metadata={
     #         'enum': [True, False],
-    #         'description': 'Visualize output only if this argument is passed. Currently this is not being used!'
+    #         'description': 'Visualize output only if this argument is '
+    #                        'passed. Currently, this is not being used!'
     #     }
     # )
 
     accept = fields.Str(
         load_default='application/json',
-        validate=validate.OneOf(['application/json']),     # NOTE: can't hanlde 'image/png' at the moment
+        validate=validate.OneOf(['application/json']),
+        # NOTE: can't handle 'image/png' at the moment
         metadata={
             'location': "headers",
-            'description': "Define the type of output to get back. Returns png file with "
-                           "detection results r a json with the prediction."
+            'description': "Define the type of output to get back. Returns "
+                           "png file with detection results or a json with "
+                           "the prediction. NOTE: Only json possible currently"
         }
     )
 
