@@ -180,7 +180,7 @@ def predict(**args):
     except IndexError as e:
         logger.error(
             f"No checkpoint or config file found in "
-            f"{args['predict_model_dir']}!Error: %s", e, exc_info=True)
+            f"{args['predict_model_dir']}! Error: %s", e, exc_info=True)
         raise e
 
     # define output directory regardless of whether it's remote or local

@@ -124,46 +124,27 @@ def main(args):
 
         # redefine epoch number: epochs wanted by user + epochs already trained
         user_epochs = args['epochs']
+
         try:
-            log_paths = sorted(Path(args['train_from']).glob("*.log.json"))
+            # get existing epoch paths and sort by epoch number
+            epoch_paths = list(Path(args['train_from']).glob("epoch_*.pth"))
+            epoch_paths.sort(
+                key = lambda x: int(x.stem.split('_')[1])
+            )
+            # get previously trained epoch number from newest file
+            prev_epochs = int(epoch_paths[-1].stem.split('_')[1])
 
-            # ensure epoch number in log data was fully completed
-            # (has a matching epoch_NUM.pth file)
-            while True:
-                if log_paths:
-                    log_path = log_paths[-1]
-                    with open(log_path, "r") as f:
-                        log_data = f.readlines()
-                    prev_epochs = ast.literal_eval(log_data[-1])['epoch']
-
-                    if Path(args['train_from'],
-                            f'epoch_{prev_epochs}.pth').is_file():
-                        break
-                    else:
-                        log_paths.pop(-1)
-                else:
-                    prev_epochs = 0
-
-            logger.info(f"Previously fully trained epochs {prev_epochs} "
-                        f"will be added to user defined epoch number "
-                        f"{user_epochs}")
+            print(f"Previously trained epochs {prev_epochs} "
+                  f"will be added to user defined epoch number "
+                  f"{user_epochs}")  # logger.info
             args['cfg_options']['runner.max_epochs'] = (prev_epochs
                                                         + user_epochs)
 
-        except IndexError as e:
-            logger.error(
-                f"Could not find a '.log.json' file in the previously "
-                f"trained model folder {args['train_from']}. Cannot continue "
-                f"incomplete training!\nError: %s", e, exc_info=True
-            )
-            # NOTE: HTTPException/Error(e) causes TypeError (__init__)
-            raise   # equivalent to "raise e" -> works, but returns code 200
-
-        except KeyError:
+        except IndexError:
             logger.warning(
-                "Previous training incomplete, no 'epoch' key found in "
-                "logging file. Assuming epoch previously trained "
-                "epoch number as 0."
+                "Previous training incomplete, no 'epoch_*.pth' found "
+                "in selected model folder. Assuming number of previously "
+                "trained epochs as 0."
             )
             args['cfg_options']['runner.max_epochs'] = 0 + user_epochs
 
