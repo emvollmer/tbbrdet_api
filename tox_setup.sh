@@ -22,6 +22,8 @@ pip3 install mmdet==2.21.0
 # Install everything else
 pip3 install future tensorboard mlflow joblib tqdm
 
+pip3 install 'webargs>=5.5.2' 'deepaas>=1.3.0' 'importlib-metadata>=1.7.0' aiohttp pyyaml
+
 echo "Installing tox related packages..."
 pip3 install flake8 'bandit>=1.1.0'
 

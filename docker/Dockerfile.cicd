@@ -45,4 +45,7 @@ ENV RCLONE_CONFIG=/srv/.rclone/rclone.conf
 # Set the working directory
 WORKDIR /srv
 
+# Set environment
+ENV PBR_VERSION=0.0.1
+
 CMD ["tail","-f","/dev/null"]
