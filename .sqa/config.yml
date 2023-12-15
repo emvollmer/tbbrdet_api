@@ -8,36 +8,36 @@ config:
       password_var: JPL_DOCKERPASS
 
 environment:
-  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cpu"
+  JPL_DOCKERPUSH: "deephdc/uc-emvollmer-deep-oc-tbbrdet_api:cpu-test"
   JPL_DOCKERFORCEBUILD: "True"
   LANG: C.UTF-8
 
 sqa_criteria:
-  qc_style:
+  Src.Install:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
-        tox:
-          tox_file: tox.ini
-          testenv:
-            - qc.sty
+        commands:
+        - sh -c "git submodule init && git submodule update --remote --merge && pip3 install -e ./TBBRDet && pip3 install -e . && pip3 install -r requirements-test.txt"
+  QC.Sty:
+    repos:
+      tbbrdet_api:
+        container: tbbrdet_api-testing
+        commands:
+        - sh -c "flake8 --format=pylint tbbrdet_api"
 
-  qc_coverage:
+  QC.Cov:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
-        tox:
-          tox_file: tox.ini
-          testenv:
-            - qc.cov
+        commands:
+        - sh -c "pytest --cov=tbbrdet_api --cov-report=html:./htmlcov tbbrdet_api/tests"
 
-  qc_security:
+  QC.Sec:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
-        tox:
-          tox_file: tox.ini
-          testenv:
-            - qc.sec
+        commands:
+        - sh -c "bandit -r tbbrdet_api -x tests"
 
 timeout: 1200
