@@ -21,7 +21,6 @@ python train.py configs/mmdet/<MODEL_NAME>/..._coco.scratch.py
 --resume-from '/path/to/model.pth'
 --cfg-options 'data_root'='/path/to/datasets'
 """
-import ast
 from datetime import datetime
 import os
 import os.path as osp
@@ -129,9 +128,9 @@ def main(args):
             # get existing epoch paths and sort by epoch number
             epoch_paths = list(Path(args['train_from']).glob("epoch_*.pth"))
             epoch_paths.sort(
-                key = lambda x: int(x.stem.split('_')[1])
+                key=lambda x: int(x.stem.split('_')[1])
             )
-            # get previously trained epoch number from newest file
+            # get previously trained epoch number from the newest file
             prev_epochs = int(epoch_paths[-1].stem.split('_')[1])
 
             print(f"Previously trained epochs {prev_epochs} "
