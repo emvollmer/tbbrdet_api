@@ -26,7 +26,7 @@ RUN apt-get update && \
 ENV LANG C.UTF-8
 
 # install python tools necessary for code testing
-RUN pip3 install --no-cache-dir tox flake8 pylint pydocstyle pep8 bandit sphinx
+RUN pip3 install --no-cache-dir tox==2.9.0 flake8 pylint pydocstyle pep8 bandit sphinx
 # otherwise issues with twine<=1.10.0
 RUN pip3 install --no-cache-dir twine==1.11.0
 RUN pip3 install --no-cache-dir -U wheel setuptools

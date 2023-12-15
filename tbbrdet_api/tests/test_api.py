@@ -1,13 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Its good practice to have tests checking your code runs correctly.
-Here we included a dummy test checking the api correctly returns
-expected metadata. We suggest to extend this file to include, for
-example, test for checking the predict() function is indeed working
-as expected.
+Tests to check if runs correctly.
 
 These tests will run in the Jenkins pipeline after each change
-you make to the code.
+made to the code.
 """
 
 import unittest
@@ -30,15 +26,23 @@ class TestModelMethods(unittest.TestCase):
         Test that get_metadata() returns right values (subset)
         """
         self.assertEqual(
-            self.meta["name"].lower().replace("-", "_"),
+            self.meta["model_name"].lower(), "TBBRDet".lower()
+        )
+        self.assertEqual(
+            self.meta["api_name"].lower().replace("-", "_"),
             "tbbrdet_api".lower().replace("-", "_"),
         )
         self.assertEqual(
-            self.meta["author"].lower(), "Elena Vollmer".lower()
+            self.meta["api_authors"].lower(), "Elena Vollmer".lower()
         )
         self.assertEqual(
-            self.meta["license"].lower(),
-            "BSD-3-Clause".lower(),
+            self.meta["model_authors"].lower(), "James Kahn".lower()
+        )
+        self.assertEqual(
+            self.meta["license"].lower(), "BSD-3-Clause".lower(),
+        )
+        self.assertEqual(
+            self.meta["version"].lower(), "0.0.1".lower(),
         )
 
 

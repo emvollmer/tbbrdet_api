@@ -34,6 +34,8 @@ def get_metadata():
         A dictionary containing metadata information required by DEEPaaS.
     """
     metadata = {
+        'api_name': configs.API_METADATA.get("name"),
+        'model_name': configs.MODEL_METADATA.get("name"),
         'api_authors': configs.API_METADATA.get("author"),
         'model_authors': configs.MODEL_METADATA.get("author"),
         'description': configs.MODEL_METADATA.get("summary"),
@@ -61,7 +63,6 @@ def get_train_args():
     Returns:
         Dictionary of webargs fields.
       """
-    # NOTE: potentially requires _fields_to_dict misc function for conversion!
     train_args = fields.TrainArgsSchema().fields
     logger.debug("Web arguments: %s", train_args)
     return train_args
@@ -71,13 +72,9 @@ def get_predict_args():
     """
     Return the arguments that are needed to perform a prediction.
 
-    Args:
-        None
-
     Returns:
         Dictionary of webargs fields.
     """
-    # NOTE: potentially requires _fields_to_dict misc function for conversion!
     predict_args = fields.PredictArgsSchema().fields
     logger.debug("Web arguments: %s", predict_args)
     return predict_args
