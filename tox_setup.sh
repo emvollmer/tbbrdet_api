@@ -29,7 +29,7 @@ pip3 install flake8 'bandit>=1.1.0'
 
 # Remove once we rely on coverage 4.3+
 # https://bitbucket.org/ned/coveragepy/issues/519/
-pip3 install coverage!=4.4,>=4.0 # Apache-2.0
+pip3 install 'coverage!=4.4,>=4.0'   # Apache-2.0
 
 pip3 install 'stestr>=1.0.0' 'testtools>=1.4.0'
 

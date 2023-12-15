@@ -111,32 +111,6 @@ def extract_zst(zst_folder: Path = configs.DATA_PATH):
             zst_path.unlink()
 
 
-def launch_cmd(logdir, port):
-    subprocess.call(["tensorboard",
-                     "--logdir", f"{logdir}",
-                     "--port", f"{port}",
-                     "--host", "0.0.0.0"])  # nosec B603, B607
-
-
-def launch_tensorboard(logdir, port=6006):
-    """
-    Run Tensorboard on a separate Process on behalf of the user
-
-    Parameters
-    ==========
-    * logdir: str, pathlib.Path
-        Folder path to tensorboard logs.
-    * port: int
-        Port to use for the monitoring webserver.
-    """
-    subprocess.call(
-        ["fuser", "-k", f"{port}/tcp"]  # kill any previous process on port
-    )
-    p = Process(target=launch_cmd, args=(logdir, port))
-    p.daemon = True  # Set the daemon property (Python 3.6 equivalent)
-    p.start()
-
-
 def ls_folders(directory: Path = configs.MODEL_PATH,
                pattern: str = "*latest.pth") -> list:
     """
@@ -209,6 +183,7 @@ def run_subprocess(command: list, process_message: str,
                    timeout: int = 500):
     """
     Function to run a subprocess command.
+    Tox security issue with subprocess is ignored here using # nosec.
 
     Args:
         command (list): Command to be run.
@@ -245,7 +220,7 @@ def run_subprocess(command: list, process_message: str,
               f"Running {process_message} command:\n'{str_command}'\n"
               f"=================================")    # logger.info
 
-        process = subprocess.Popen(
+        process = subprocess.Popen(      # nosec
                 command,
                 stdout=subprocess.PIPE,  # Capture stdout
                 stderr=subprocess.PIPE,  # Capture stderr
