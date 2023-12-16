@@ -13,18 +13,12 @@ environment:
   LANG: C.UTF-8
 
 sqa_criteria:
-  Src.Install:
-    repos:
-      tbbrdet_api:
-        container: tbbrdet_api-testing
-        commands:
-        - sh -c "git submodule init && git submodule update --remote --merge && pip3 install -e ./TBBRDet && pip3 install -e . && pip3 install -r requirements-test.txt"
   QC.Sty:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
         commands:
-        - sh -c "flake8 --format=pylint tbbrdet_api"
+        - sh -c "./sqa-init.sh && flake8 --format=pylint tbbrdet_api"
 
   QC.Cov:
     repos:
