@@ -13,21 +13,21 @@ environment:
   LANG: C.UTF-8
 
 sqa_criteria:
-  QC.Sty:
+  qc_style:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
         commands:
         - sh -c "./sqa-init.sh && flake8 --format=pylint tbbrdet_api"
 
-  QC.Cov:
+  qc_coverage:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
         commands:
         - sh -c "pytest --cov=tbbrdet_api --cov-report=html:./htmlcov tbbrdet_api/tests"
 
-  QC.Sec:
+  qc_security:
     repos:
       tbbrdet_api:
         container: tbbrdet_api-testing
