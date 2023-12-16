@@ -1,6 +1,6 @@
 #!/bin/bash
 
-git config --global --add safe.directory /srv/tbbrdet_api && \
+git config --global --add safe.directory /srv/tbbrdet_api/* && \
 git submodule init && \
 git submodule update --remote --merge && \
 pip3 install -e ./TBBRDet && \
