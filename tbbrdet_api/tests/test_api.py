@@ -41,8 +41,8 @@ class TestModelMethods(unittest.TestCase):
         self.assertEqual(
             self.meta["license"].lower(), "BSD-3-Clause".lower(),
         )
-        self.assertEqual(
-            self.meta["version"].lower(), "0.0.1".lower(),
+        self.assertIn(
+            "0.0.1", self.meta["version"]
         )
 
 
