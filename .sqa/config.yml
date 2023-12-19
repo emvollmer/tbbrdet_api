@@ -18,7 +18,7 @@ sqa_criteria:
       tbbrdet_api:
         container: tbbrdet_api-testing
         commands:
-        - sh -c "./sqa-init.sh && flake8 --format=pylint tbbrdet_api ||true"
+        - sh -c "./sqa-init.sh && flake8 --format=pylint tbbrdet_api"
 
   qc_coverage:
     repos:
