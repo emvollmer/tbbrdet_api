@@ -4,7 +4,6 @@ This file gathers some utility functions for all other scripts
 """
 
 from functools import wraps
-from multiprocessing import Process
 import logging
 import subprocess
 from subprocess import TimeoutExpired
