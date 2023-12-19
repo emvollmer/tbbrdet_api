@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Tox setup..."
-export PBR_VERSION=6.0.0
+export PBR_VERSION=0.0.1
 
 # Ensure packages are installed in the correct order
 # Make sure pip is up to date
