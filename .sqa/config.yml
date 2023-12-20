@@ -32,6 +32,6 @@ sqa_criteria:
       tbbrdet_api:
         container: tbbrdet_api-testing
         commands:
-        - sh -c "bandit -r tbbrdet_api -x tests"
+        - sh -c "bandit -c bandit.yaml -r tbbrdet_api -x tests"
 
 timeout: 1200
