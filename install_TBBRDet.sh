@@ -106,6 +106,9 @@ pip3 install -e ./TBBRDet
 echo "Installing tbbrdet_api repository as editable..."
 pip3 install -e .
 
+echo "Installing requirements for running pytest tests..."
+pip3 install -r requirements-test.txt
+
 echo "==============================="
 echo "Installation process complete."
 echo "==============================="
